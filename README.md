@@ -177,4 +177,4 @@ uvicorn main:app --reload --port 8001
 
 ## 👥 팀 정보
 
-**FusionCrew** © 2024
+**FusionCrew** © 2025~2026
