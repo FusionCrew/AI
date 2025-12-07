@@ -4,7 +4,7 @@ from fastapi.responses import HTMLResponse
 
 app = FastAPI(
     title="AI Kiosk - AI Server",
-    description="STT, LLM, AI 추론을 담당하는 FastAPI 서버",
+    description="MediaPipe Pose와 FaceMesh용 딥러닝 모델 구동 서버",
     version="0.1.0"
 )
 
@@ -61,7 +61,7 @@ async def root():
             <h1>🤖 AI Kiosk - AI Server</h1>
             <p>Hello World! FastAPI Server is running.</p>
             <p class="tech">Python + FastAPI + OpenAI</p>
-            <p style="margin-top: 2rem; font-size: 0.9rem; opacity: 0.7">FusionCrew © 2024</p>
+            <p style="margin-top: 2rem; font-size: 0.9rem; opacity: 0.7">FusionCrew © 2025~2026</p>
         </div>
     </body>
     </html>
