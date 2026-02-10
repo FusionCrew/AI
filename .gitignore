@@ -50,6 +50,9 @@ models/
 
 # Modules to Ignore (User Request)
 signLanguage/
-hesitationLearning/
+
+# Ignore hesitationLearning contents but KEEP 'pose' folder
+hesitationLearning/*
 !hesitationLearning/pose/
 !hesitationLearning/__init__.py
+!hesitationLearning/inference.py

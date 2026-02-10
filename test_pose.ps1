@@ -10,6 +10,7 @@ if (-not (Test-Path $PYTHON_EXE)) {
 }
 
 # 테스트 실행 (새로운 경로)
+# test.py는 내부적으로 sys.path를 추가하므로 바로 실행 가능
 & $PYTHON_EXE hesitationLearning/pose/test.py
 
 if ($LASTEXITCODE -ne 0) {
