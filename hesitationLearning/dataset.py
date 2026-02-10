@@ -175,3 +175,78 @@ def get_dataset_stats() -> dict:
             }
     
     return stats
+
+# LSTM 학습을 위한 캐시 로더 함수 추가
+from .config import FEATURES_CACHE_FILE, MAX_SEQ_LEN
+
+def pad_sequences(features_list: np.ndarray, max_len: int = MAX_SEQ_LEN) -> np.ndarray:
+    """
+    가변 길이의 시퀀스 리스트를 고정 길이로 패딩 (Post-padding)
+    """
+    N = len(features_list)
+    if N == 0:
+        return np.array([])
+        
+    # 첫 번째 샘플로 Feature 차원 확인 (없으면 기본값 13)
+    feat_dim = features_list[0].shape[1] if N > 0 and len(features_list[0]) > 0 else 13
+    
+    padded = np.zeros((N, max_len, feat_dim), dtype=np.float32)
+    
+    for i, seq in enumerate(features_list):
+        if seq is None or len(seq) == 0:
+            continue
+            
+        seq_len = len(seq)
+        if seq_len > max_len:
+            # 너무 길면 자름
+            padded[i] = seq[:max_len]
+        else:
+            # 짧으면 앞부분에 채우고 나머지는 0
+            padded[i, :seq_len, :] = seq
+            
+    return padded
+
+def load_cached_features(binary: bool = True):
+    """
+    캐시된 특징(시퀀스)과 라벨 로드 (LSTM용)
+    Returns:
+        X_train, y_train, X_val, y_val, X_test, y_test
+    """
+    if not FEATURES_CACHE_FILE.exists():
+        raise FileNotFoundError("Features cache not found. Run extract_features.py first.")
+    
+    print(f"Loading cache from {FEATURES_CACHE_FILE}...")
+    try:
+        data = np.load(FEATURES_CACHE_FILE, allow_pickle=True)
+        
+        # Features (Object Array of Sequences)
+        X_train_raw = data["train_features"]
+        X_val_raw = data["val_features"]
+        X_test_raw = data["test_features"]
+        
+        # Labels
+        y_train = data["train_labels"]
+        y_val = data["val_labels"]
+        y_test = data["test_labels"]
+        
+        print(f"  Raw Train samples: {len(X_train_raw)}")
+        
+        # Padding
+        print(f"  Padding sequences to length {MAX_SEQ_LEN}...")
+        X_train = pad_sequences(X_train_raw)
+        X_val = pad_sequences(X_val_raw)
+        X_test = pad_sequences(X_test_raw)
+        
+        if binary:
+            # 0,1(Low) -> 0, 2,3(High) -> 1
+            # DAiSEE: 0(Boredom? No), Confusion Labels are 0,1,2,3
+            # We assume Confusion label >= 2 is Positive
+            y_train = (y_train >= 2).astype(int)
+            y_val = (y_val >= 2).astype(int)
+            y_test = (y_test >= 2).astype(int)
+            
+        return X_train, y_train, X_val, y_val, X_test, y_test
+        
+    except Exception as e:
+        print(f"[ERROR] Failed to load cache: {e}")
+        raise e

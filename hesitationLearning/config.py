@@ -6,10 +6,17 @@ import os
 from pathlib import Path
 
 # 기본 경로 설정
-BASE_DIR = Path(__file__).parent.parent
+# 기본 경로 설정
+BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
-DAISEE_DIR = DATA_DIR / "daisee"
+DAISEE_DIR = DATA_DIR / "daisee"  # hesitationLearning/data/daisee/
 MODEL_DIR = BASE_DIR / "models"
+
+# 캐시 경로 설정
+CACHE_DIR = DATA_DIR / "cache"
+FEATURES_CACHE_FILE = CACHE_DIR / "features_cache.npz"
+LABELS_CACHE_FILE = CACHE_DIR / "labels_cache.json"
+CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 # 모델 저장 경로
 MODEL_PATH = MODEL_DIR / "hesitation_model.joblib"
@@ -58,6 +65,10 @@ FEATURE_CONFIG = {
 TRAIN_CONFIG = {
     "test_size": 0.2,
     "random_state": 42,
-    "n_estimators": 100,  # Random Forest
     "max_depth": 10,
 }
+
+# LSTM 모델 설정 (시계열)
+MAX_SEQ_LEN = 150  # 최대 시퀀스 길이 (프레임 수, 약 5~10초) - Padding/Truncating 기준
+INPUT_SIZE = 13    # 입력 특징 차원 (get_feature_names() 개수)
+BATCH_SIZE = 32

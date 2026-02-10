@@ -97,13 +97,6 @@ class HesitationResponse(BaseModel):
     error: Optional[str] = None
 
 
-
-class SignLanguageResponse(BaseModel):
-    """수화 인식 응답 모델"""
-    text: str
-    error: Optional[str] = None
-
-
 class Base64ImageRequest(BaseModel):
     """Base64 이미지 요청 모델"""
     image: str  # Base64 encoded image
@@ -181,47 +174,6 @@ async def hesitation_model_status():
         "model_path": str(MODEL_PATH),
         "message": "Model ready" if (model_exists and scaler_exists) else "Model not trained yet"
     }
-
-
-# ============================================
-# Sign Language Translation API
-# ============================================
-
-@app.post("/api/sign-language/translate", response_model=SignLanguageResponse)
-async def translate_sign_language(video: UploadFile = File(...)):
-    """
-    수화 비디오 번역 API
-    
-    - **video**: 비디오 파일 (MP4, AVI 등)
-    - Returns: 번역된 텍스트
-    """
-    import tempfile
-    import os
-    from signLanguage.inference import HandTranslator
-    
-    # 임시 파일로 저장
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tmp:
-        content = await video.read()
-        tmp.write(content)
-        tmp_path = tmp.name
-        
-    try:
-        translator = HandTranslator()
-        # 비디오 처리
-        result_text = translator.process_video(tmp_path)
-        
-        if result_text is None:
-             raise HTTPException(status_code=400, detail="Could not process video")
-             
-        return SignLanguageResponse(text=result_text)
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        # 임시 파일 삭제
-        if os.path.exists(tmp_path):
-            os.remove(tmp_path)
-
 
 
 # STT, LLM 등 AI 기능은 추후 구현

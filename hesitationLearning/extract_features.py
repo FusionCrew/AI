@@ -82,7 +82,8 @@ def extract_all_features(max_samples_per_split: int = None, force: bool = False)
             clip_ids.append(clip_id)
         
         if features_list:
-            all_features[split] = np.array(features_list)
+            # 시퀀스 데이터는 길이가 다르므로 object array로 저장
+            all_features[split] = np.array(features_list, dtype=object)
             all_labels[split] = {
                 "labels": labels_list,
                 "clip_ids": clip_ids,
@@ -93,14 +94,17 @@ def extract_all_features(max_samples_per_split: int = None, force: bool = False)
     # 캐시 저장
     print("\n[INFO] Saving cache files...")
     
-    # Features 저장 (numpy compressed)
+    # Features 및 Labels 저장 (numpy compressed)
     np.savez_compressed(
         FEATURES_CACHE_FILE,
-        train=all_features.get("Train", np.array([])),
-        validation=all_features.get("Validation", np.array([])),
-        test=all_features.get("Test", np.array([]))
+        train_features=all_features.get("Train", np.array([], dtype=object)),
+        train_labels=np.array(all_labels.get("Train", {}).get("labels", [])),
+        val_features=all_features.get("Validation", np.array([], dtype=object)),
+        val_labels=np.array(all_labels.get("Validation", {}).get("labels", [])),
+        test_features=all_features.get("Test", np.array([], dtype=object)),
+        test_labels=np.array(all_labels.get("Test", {}).get("labels", []))
     )
-    print(f"  Features saved to {FEATURES_CACHE_FILE}")
+    print(f"  Features and labels saved to {FEATURES_CACHE_FILE}")
     
     # Labels 저장 (JSON)
     with open(LABELS_CACHE_FILE, "w") as f:

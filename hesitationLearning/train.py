@@ -46,38 +46,46 @@ def train(
         print(f"  {split}: {info['total']} samples")
         print(f"    Confusion distribution: {info['confusion_distribution']}")
     
-    # 3. 데이터 로드
-    if test_mode and max_samples is None:
-        max_samples = 50  # 테스트 모드 기본값
+    # 3. 데이터 로드 (캐시된 특징만 사용)
+    from .extract_features import check_cache_exists
+    from .dataset import load_cached_features
     
+    if not check_cache_exists():
+        print("\n[ERROR] Cached features not found!")
+        print("Please run feature extraction first:")
+        print("python -m hesitationLearning.run_feature_extraction")
+        return
+    
+    print("\n[INFO] Loading cached features...")
+    try:
+        X_train, y_train, X_val, y_val, X_test, y_test = load_cached_features(binary=binary)
+    except Exception as e:
+        print(f"[ERROR] Failed to load cache: {e}")
+        return
+
+    # 가상 데이터 로드 및 추가
+    from .config import DATA_DIR
+    synthetic_path = DATA_DIR / "cache" / "synthetic_data.npz"
+    if synthetic_path.exists():
+        print(f"\n[INFO] Loading synthetic data from {synthetic_path}...")
+        try:
+            syn_data = np.load(synthetic_path)
+            X_syn = syn_data["X"]
+            y_syn = syn_data["y"]
+            
+            X_train = np.vstack([X_train, X_syn])
+            y_train = np.concatenate([y_train, y_syn])
+            print(f"  Added {len(X_syn)} synthetic samples.")
+        except Exception as e:
+            print(f"  [WARNING] Failed to load synthetic data: {e}")
+    
+    # max_samples 적용 (테스트용)
     if max_samples:
-        print(f"\n[INFO] Using max {max_samples} samples per split")
-    
-    # 캐시 사용 확인
-    from .extract_features import check_cache_exists, load_cached_features
-    
-    use_cache = check_cache_exists() and max_samples is None
-    
-    if use_cache:
-        print("\n[INFO] Loading cached features (fast)...")
-        try:
-            X_train, y_train, X_test, y_test = load_cached_features(binary=binary)
-        except Exception as e:
-            print(f"  [WARNING] Cache load failed: {e}")
-            use_cache = False
-    
-    if not use_cache:
-        print("\n[INFO] Loading dataset from videos (slow)...")
-        dataset = DAiSEEDataset(binary=binary)
+        print(f"[INFO] Using max {max_samples} samples (truncated)")
+        X_train = X_train[:max_samples]
+        y_train = y_train[:max_samples]
+        # Test 셋은 그대로 유지하거나 비율에 맞게 줄임
         
-        try:
-            X_train, y_train, X_test, y_test = dataset.load_all(
-                max_samples_per_split=max_samples
-            )
-        except Exception as e:
-            print(f"\n[ERROR] Failed to load dataset: {e}")
-            return
-    
     print(f"\n[INFO] Dataset loaded:")
     print(f"  Train: {X_train.shape[0]} samples, {X_train.shape[1]} features")
     print(f"  Test: {X_test.shape[0]} samples")
@@ -108,8 +116,19 @@ def train(
     
     # 5. 모델 학습
     print("\n[INFO] Training model...")
+    # Class Imbalance 처리 (Class Weight 계산)
+    num_neg = (y_train == 0).sum()
+    num_pos = (y_train == 1).sum()
+    pos_weight = num_neg / num_pos if num_pos > 0 else 1.0
+    print(f"\n[INFO] Class Imbalance: Neg={num_neg}, Pos={num_pos}")
+    print(f"       Calculated pos_weight: {pos_weight:.2f}")
+
     classifier = HesitationClassifier(binary=binary)
-    train_metrics = classifier.fit(X_train, y_train)
+    train_metrics = classifier.fit(
+        X_train, y_train,
+        X_val=X_val, y_val=y_val,
+        pos_weight=pos_weight
+    )
     
     print("\n[INFO] Training Metrics:")
     for metric, value in train_metrics.items():
@@ -128,15 +147,15 @@ def train(
         else:
             print(f"  {key}: {value:.4f}")
     
-    # 6. 특징 중요도
-    feature_names = get_feature_names()
-    importances = classifier.get_feature_importance()
+    # 6. 특징 중요도 (LSTM은 지원 안 함)
+    # feature_names = get_feature_names()
+    # importances = classifier.get_feature_importance()
     
-    print("\n[INFO] Top 10 Important Features:")
-    indices = importances.argsort()[::-1][:10]
-    for i, idx in enumerate(indices):
-        if idx < len(feature_names):
-            print(f"  {i+1}. {feature_names[idx]}: {importances[idx]:.4f}")
+    # print("\n[INFO] Top 10 Important Features:")
+    # indices = importances.argsort()[::-1][:10]
+    # for i, idx in enumerate(indices):
+    #     if idx < len(feature_names):
+    #         print(f"  {i+1}. {feature_names[idx]}: {importances[idx]:.4f}")
     
     # 7. 모델 저장
     print("\n[INFO] Saving model...")

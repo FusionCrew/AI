@@ -47,3 +47,9 @@ logs/
 # Data and Models
 data/
 models/
+
+# Modules to Ignore (User Request)
+signLanguage/
+hesitationLearning/
+!hesitationLearning/pose/
+!hesitationLearning/__init__.py

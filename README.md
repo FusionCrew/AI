@@ -175,6 +175,13 @@ uvicorn main:app --reload --port 8001
 
 ---
 
+## 📁hesitationLearning 폴더 학습 코드
+
+# 학습 예시
+python -m hesitationLearning.train --max-samples 500 --threshold 0.3 --test-mode
+
+
+
 ## 👥 팀 정보
 
 **FusionCrew** © 2025~2026

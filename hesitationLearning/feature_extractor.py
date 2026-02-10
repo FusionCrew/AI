@@ -53,6 +53,11 @@ class FaceMeshExtractor:
             min_tracking_confidence=MEDIAPIPE_CONFIG["min_tracking_confidence"],
         )
         self.landmarker = vision.FaceLandmarker.create_from_options(options)
+        
+        # 시각화용
+        self.mp_drawing = mp.solutions.drawing_utils
+        self.mp_face_mesh = mp.solutions.face_mesh
+        self.results = None # 최근 감지 결과 저장
     
     def extract_landmarks(self, image: np.ndarray) -> Optional[np.ndarray]:
         """
@@ -69,6 +74,7 @@ class FaceMeshExtractor:
         mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_image)
         
         results = self.landmarker.detect(mp_image)
+        self.results = results # 결과 저장 (시각화용)
         
         if not results.face_landmarks:
             return None
@@ -256,35 +262,15 @@ def extract_features_from_video(
         return None
     
     # 시계열 통계 집계
-    features_array = np.array(all_features)
-    aggregated = []
-    
-    for agg in FEATURE_CONFIG["aggregation"]:
-        if agg == "mean":
-            aggregated.extend(np.mean(features_array, axis=0))
-        elif agg == "std":
-            aggregated.extend(np.std(features_array, axis=0))
-        elif agg == "min":
-            aggregated.extend(np.min(features_array, axis=0))
-        elif agg == "max":
-            aggregated.extend(np.max(features_array, axis=0))
-    
-    return np.array(aggregated)
+    return np.array(all_features)
 
 
 def get_feature_names() -> List[str]:
     """특징 이름 목록 반환"""
-    base_features = [
+    return [
         "left_brow_height", "right_brow_height", "brow_height_diff",
         "left_brow_slope", "right_brow_slope",
         "left_ear", "right_ear", "avg_ear",
         "mar", "head_tilt",
         "face_center_x", "face_center_y", "face_asymmetry"
     ]
-    
-    feature_names = []
-    for agg in FEATURE_CONFIG["aggregation"]:
-        for base in base_features:
-            feature_names.append(f"{base}_{agg}")
-    
-    return feature_names
