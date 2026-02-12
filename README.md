@@ -175,10 +175,11 @@ uvicorn main:app --reload --port 8001
 
 ---
 
-## 📁hesitationLearning 폴더 학습 코드
+## 📁pose 폴더 실행 코드
+
 
 # 학습 예시
-python -m hesitationLearning.train --max-samples 500 --threshold 0.3 --test-mode
+.\test_pose.ps1
 
 
 
