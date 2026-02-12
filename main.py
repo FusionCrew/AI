@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
@@ -11,6 +11,8 @@ import tempfile
 from dotenv import load_dotenv
 from openai import OpenAI
 from pathlib import Path
+import numpy as np
+import cv2
 
 # Load env from Backend folder as user specified
 env_path = Path(__file__).parent.parent / "Backend" / ".env"
@@ -110,6 +112,28 @@ class HesitationRequest(BaseModel):
     face: Optional[LandmarkGroup] = None
     pose: Optional[LandmarkGroup] = None
 
+# --- YHG-pose Models ---
+
+class HesitationResponse(BaseModel):
+    """망설임 감지 응답 모델"""
+    hesitation_level: int
+    confidence: float
+    label: str
+    probabilities: Optional[List[float]] = None
+    error: Optional[str] = None
+
+
+class SignLanguageResponse(BaseModel):
+    """수화 인식 응답 모델"""
+    text: str
+    error: Optional[str] = None
+
+
+class Base64ImageRequest(BaseModel):
+    """Base64 이미지 요청 모델"""
+    image: str  # Base64 encoded image
+    binary: bool = False  # 이진 분류 모드
+
 # --- Endpoints ---
 
 @app.get("/", response_class=HTMLResponse)
@@ -117,8 +141,12 @@ async def root():
     return """
     <html>
     <body>
-        <h1>🤖 AI Kiosk - AI Server</h1>
-        <p>FastAPI Server is running with OpenAI Integration.</p>
+        <div>
+            <h1>🤖 AI Kiosk - AI Server</h1>
+            <p>FastAPI Server is running with OpenAI Integration.</p>
+            <p class="tech">Python + FastAPI + MediaPipe + OpenAI</p>
+            <p style="margin-top: 2rem; font-size: 0.9rem; opacity: 0.7">FusionCrew © 2025~2026</p>
+        </div>
     </body>
     </html>
     """
@@ -142,7 +170,8 @@ async def meta_models():
             {"name": "whisper-1", "loaded": True, "provider": "OpenAI"},
             {"name": "tts-1", "loaded": True, "provider": "OpenAI"},
             {"name": "gpt-3.5-turbo", "loaded": True, "provider": "OpenAI"},
-            {"name": "mediapipe", "loaded": True, "provider": "Local"}
+            {"name": "mediapipe", "loaded": True, "provider": "Local"},
+            {"name": "hesitation-model", "loaded": True, "provider": "Local"}, # Added
         ]
     }
 
@@ -274,3 +303,120 @@ async def sign_language(request: SignLanguageRequest):
 @app.post("/api/v1/vision/hesitation")
 async def hesitation(request: HesitationRequest):
     return CommonResponse(success=True, data={"score": 0.0, "level": "LOW", "signals": []}, requestId="req_hesitation")
+
+
+# ============================================
+# Hesitation Detection API (From YHG-pose)
+# ============================================
+
+@app.post("/api/hesitation/detect", response_model=HesitationResponse)
+async def detect_hesitation_from_image(image: UploadFile = File(...)):
+    """
+    이미지에서 망설임 정도 감지
+    
+    - **image**: 이미지 파일 (JPEG, PNG 등)
+    - Returns: 망설임 레벨 (0-3), 신뢰도, 라벨
+    """
+    try:
+        # 이미지 읽기
+        contents = await image.read()
+        nparr = np.frombuffer(contents, np.uint8)
+        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        
+        if img is None:
+            raise HTTPException(status_code=400, detail="Failed to decode image")
+        
+        # 망설임 감지
+        from hesitationLearning.inference import detect_hesitation
+        result = detect_hesitation(img, binary=False)
+        
+        return HesitationResponse(**result)
+        
+    except ImportError:
+        raise HTTPException(
+            status_code=503,
+            detail="Hesitation detection model not available. Please train the model first."
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/hesitation/detect-base64", response_model=HesitationResponse)
+async def detect_hesitation_from_base64(request: Base64ImageRequest):
+    """
+    Base64 인코딩된 이미지에서 망설임 감지
+    
+    - **image**: Base64 인코딩된 이미지 문자열
+    - **binary**: True면 이진 분류 (망설임/비망설임)
+    - Returns: 망설임 레벨, 신뢰도, 라벨
+    """
+    try:
+        from hesitationLearning.inference import get_detector
+        detector = get_detector(binary=request.binary)
+        result = detector.detect_from_base64(request.image)
+        
+        return HesitationResponse(**result)
+        
+    except ImportError:
+        raise HTTPException(
+            status_code=503,
+            detail="Hesitation detection model not available. Please train the model first."
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/hesitation/status")
+async def hesitation_model_status():
+    """망설임 감지 모델 상태 확인"""
+    from pathlib import Path
+    from hesitationLearning.config import MODEL_PATH, SCALER_PATH
+    
+    model_exists = MODEL_PATH.exists()
+    scaler_exists = SCALER_PATH.exists()
+    
+    return {
+        "model_available": model_exists and scaler_exists,
+        "model_path": str(MODEL_PATH),
+        "message": "Model ready" if (model_exists and scaler_exists) else "Model not trained yet"
+    }
+
+
+# ============================================
+# Sign Language Translation API (From YHG-pose)
+# ============================================
+
+@app.post("/api/sign-language/translate", response_model=SignLanguageResponse)
+async def translate_sign_language(video: UploadFile = File(...)):
+    """
+    수화 비디오 번역 API
+    
+    - **video**: 비디오 파일 (MP4, AVI 등)
+    - Returns: 번역된 텍스트
+    """
+    import tempfile
+    import os
+    from signLanguage.inference import HandTranslator
+    
+    # 임시 파일로 저장
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tmp:
+        content = await video.read()
+        tmp.write(content)
+        tmp_path = tmp.name
+        
+    try:
+        translator = HandTranslator()
+        # 비디오 처리
+        result_text = translator.process_video(tmp_path)
+        
+        if result_text is None:
+             raise HTTPException(status_code=400, detail="Could not process video")
+             
+        return SignLanguageResponse(text=result_text)
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        # 임시 파일 삭제
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)

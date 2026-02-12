@@ -175,6 +175,14 @@ uvicorn main:app --reload --port 8001
 
 ---
 
+## 📁pose 폴더 실행 코드
+
+
+# 학습 예시
+.\test_pose.ps1
+
+
+
 ## 👥 팀 정보
 
 **FusionCrew** © 2025~2026

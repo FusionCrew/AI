@@ -43,3 +43,16 @@ Thumbs.db
 # Logs
 *.log
 logs/
+
+# Data and Models
+data/
+models/
+
+# Modules to Ignore (User Request)
+signLanguage/
+
+# Ignore hesitationLearning contents but KEEP 'pose' folder
+hesitationLearning/*
+!hesitationLearning/pose/
+!hesitationLearning/__init__.py
+!hesitationLearning/inference.py
