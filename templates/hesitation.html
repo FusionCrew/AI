@@ -1,0 +1,406 @@
+﻿<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Hesitation Realtime Dashboard</title>
+  <style>
+    :root {
+      --bg: #0f1318;
+      --panel: #171d24;
+      --text: #e8edf2;
+      --muted: #9fb0c1;
+      --ok: #32d583;
+      --bad: #f04438;
+      --line: #25303b;
+    }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      color: var(--text);
+      background: radial-gradient(circle at 20% 10%, #1a2230 0%, var(--bg) 45%);
+    }
+    .wrap {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    h1 {
+      margin: 0 0 16px;
+      font-size: 24px;
+      letter-spacing: 0.2px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      gap: 16px;
+    }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 14px;
+    }
+    #video {
+      width: 100%;
+      max-height: 70vh;
+      background: #000;
+      border-radius: 10px;
+    }
+    .video-wrap {
+      position: relative;
+      width: 100%;
+    }
+    #overlay {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      border-radius: 10px;
+    }
+    #canvas { display: none; }
+    .controls {
+      display: flex;
+      gap: 10px;
+      margin-top: 12px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    button {
+      border: 0;
+      border-radius: 10px;
+      padding: 10px 14px;
+      background: #2e90fa;
+      color: white;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .status {
+      font-size: 22px;
+      font-weight: 800;
+      margin-bottom: 8px;
+    }
+    .status.ok { color: var(--ok); }
+    .status.bad { color: var(--bad); }
+    .kv {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px;
+      padding: 6px 0;
+      border-bottom: 1px dashed var(--line);
+      font-size: 14px;
+    }
+    .kv:last-child { border-bottom: 0; }
+    .k { color: var(--muted); }
+    .foot {
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    @media (max-width: 900px) {
+      .grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>웹캠 실시간 망설임 점수</h1>
+    <div class="grid">
+      <div class="panel">
+        <div class="video-wrap">
+          <video id="video" autoplay playsinline muted></video>
+          <canvas id="overlay"></canvas>
+        </div>
+        <canvas id="canvas" width="320" height="240"></canvas>
+        <div class="controls">
+          <button id="startBtn">카메라 시작</button>
+          <button id="stopBtn" disabled>중지</button>
+          <label>
+            샘플링(ms)
+            <input id="intervalMs" type="number" value="180" min="80" max="1500" style="width:90px; margin-left:4px;">
+          </label>
+          <label>
+            캡처해상도
+            <select id="captureSize" style="margin-left:4px;">
+              <option value="320x240" selected>320x240 (권장)</option>
+              <option value="480x360">480x360</option>
+              <option value="640x480">640x480</option>
+            </select>
+          </label>
+          <label>
+            <input id="adaptiveMode" type="checkbox" checked>
+            Adaptive
+          </label>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div id="status" class="status ok">NORMAL</div>
+
+        <div class="kv"><span class="k">face_score</span><strong id="faceScore">0.000</strong></div>
+        <div class="kv"><span class="k">pose_score</span><strong id="poseScore">0.000</strong></div>
+        <div class="kv"><span class="k">hand_hover</span><strong id="handHover">0.000</strong></div>
+        <div class="kv"><span class="k">torso_lean</span><strong id="torsoLean">0.000</strong></div>
+        <div class="kv"><span class="k">sway</span><strong id="sway">0.000</strong></div>
+        <div class="kv"><span class="k">final_raw</span><strong id="finalRaw">0.000</strong></div>
+        <div class="kv"><span class="k">final_ema</span><strong id="finalEma">0.000</strong></div>
+        <div class="kv"><span class="k">threshold(서버기준)</span><strong>0.600</strong></div>
+        <div class="kv"><span class="k">Latency</span><strong id="latency">0 ms</strong></div>
+        <div class="kv"><span class="k">FPS(요청기준)</span><strong id="fps">0.0</strong></div>
+        <div class="kv"><span class="k">실제 간격</span><strong id="actualInterval">180 ms</strong></div>
+        <div class="foot" id="msg">준비됨</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const overlay = document.getElementById('overlay');
+    const octx = overlay.getContext('2d');
+
+    const startBtn = document.getElementById('startBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const intervalMsInput = document.getElementById('intervalMs');
+    const captureSizeInput = document.getElementById('captureSize');
+    const adaptiveModeInput = document.getElementById('adaptiveMode');
+
+    const statusEl = document.getElementById('status');
+    const faceScoreEl = document.getElementById('faceScore');
+    const poseScoreEl = document.getElementById('poseScore');
+    const handHoverEl = document.getElementById('handHover');
+    const torsoLeanEl = document.getElementById('torsoLean');
+    const swayEl = document.getElementById('sway');
+    const finalRawEl = document.getElementById('finalRaw');
+    const finalEmaEl = document.getElementById('finalEma');
+    const latencyEl = document.getElementById('latency');
+    const fpsEl = document.getElementById('fps');
+    const actualIntervalEl = document.getElementById('actualInterval');
+    const msgEl = document.getElementById('msg');
+
+    let stream = null;
+    let timer = null;
+    let inFlight = false;
+    let apiBase = '';
+    let frameCount = 0;
+    let fpsStart = performance.now();
+    let latencyEma = 180;
+
+    function toFixed3(v) {
+      const n = Number(v || 0);
+      return Number.isFinite(n) ? n.toFixed(3) : '0.000';
+    }
+
+    function setStatus(isHesitating, statusText) {
+      statusEl.textContent = statusText || (isHesitating ? 'HESITATING' : 'NORMAL');
+      statusEl.className = 'status ' + (isHesitating ? 'bad' : 'ok');
+    }
+
+    function getBaseInterval() {
+      return Math.max(80, Number(intervalMsInput.value || 180));
+    }
+
+    function getCaptureSize() {
+      const raw = String(captureSizeInput.value || '320x240');
+      const [w, h] = raw.split('x').map(Number);
+      return { w: Number.isFinite(w) ? w : 320, h: Number.isFinite(h) ? h : 240 };
+    }
+
+    function getNextDelay() {
+      const base = getBaseInterval();
+      if (!adaptiveModeInput.checked) return base;
+      return Math.round(Math.max(base, Math.min(1200, latencyEma * 1.25)));
+    }
+
+    function refreshFpsCounter() {
+      const now = performance.now();
+      const elapsed = (now - fpsStart) / 1000;
+      if (elapsed >= 1) {
+        fpsEl.textContent = (frameCount / elapsed).toFixed(1);
+        fpsStart = now;
+        frameCount = 0;
+      }
+    }
+
+    function resizeOverlay() {
+      overlay.width = video.videoWidth || 640;
+      overlay.height = video.videoHeight || 480;
+    }
+
+    function drawPoseOverlay(data) {
+      resizeOverlay();
+      octx.clearRect(0, 0, overlay.width, overlay.height);
+      const points = data.pose_points || (data.pose_features && data.pose_features.pose_points) || [];
+      const conns = data.pose_connections || (data.pose_features && data.pose_features.pose_connections) || [];
+      if (!points.length) return;
+
+      octx.lineWidth = 2;
+      octx.strokeStyle = 'rgba(0, 220, 255, 0.85)';
+      octx.fillStyle = 'rgba(255, 230, 80, 0.9)';
+
+      for (const pair of conns) {
+        const a = points[pair[0]];
+        const b = points[pair[1]];
+        if (!a || !b) continue;
+        if ((a.v ?? 1) < 0.35 || (b.v ?? 1) < 0.35) continue;
+        octx.beginPath();
+        octx.moveTo(a.x * overlay.width, a.y * overlay.height);
+        octx.lineTo(b.x * overlay.width, b.y * overlay.height);
+        octx.stroke();
+      }
+
+      for (const p of points) {
+        if ((p.v ?? 1) < 0.35) continue;
+        octx.beginPath();
+        octx.arc(p.x * overlay.width, p.y * overlay.height, 2.6, 0, Math.PI * 2);
+        octx.fill();
+      }
+    }
+
+    function scheduleNextTick() {
+      if (!stream) return;
+      const delay = getNextDelay();
+      actualIntervalEl.textContent = `${delay} ms`;
+      timer = setTimeout(loopTick, delay);
+    }
+
+    function blobToBase64(blob) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          const result = String(reader.result || '');
+          resolve(result.includes(',') ? result.split(',')[1] : '');
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+    }
+
+    async function canvasToBase64Jpeg(targetCanvas, quality = 0.62) {
+      const blob = await new Promise((resolve) => targetCanvas.toBlob(resolve, 'image/jpeg', quality));
+      if (!blob) return '';
+      return blobToBase64(blob);
+    }
+
+    async function startCamera() {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' },
+          audio: false
+        });
+        video.srcObject = stream;
+        await video.play();
+
+        startBtn.disabled = true;
+        stopBtn.disabled = false;
+        msgEl.textContent = '실시간 분석 중';
+
+        latencyEma = getBaseInterval();
+        scheduleNextTick();
+      } catch (e) {
+        msgEl.textContent = '카메라 권한 또는 장치 오류';
+        console.error(e);
+      }
+    }
+
+    function stopCamera() {
+      if (timer) {
+        clearTimeout(timer);
+        timer = null;
+      }
+      if (stream) {
+        stream.getTracks().forEach(t => t.stop());
+        stream = null;
+      }
+      video.srcObject = null;
+      inFlight = false;
+      startBtn.disabled = false;
+      stopBtn.disabled = true;
+      msgEl.textContent = '중지됨';
+      octx.clearRect(0, 0, overlay.width, overlay.height);
+    }
+
+    async function loopTick() {
+      if (!stream) return;
+      await captureAndSend();
+      scheduleNextTick();
+    }
+
+    async function captureAndSend() {
+      if (inFlight || !video.videoWidth || !video.videoHeight) return;
+      inFlight = true;
+
+      try {
+        const { w, h } = getCaptureSize();
+        canvas.width = w;
+        canvas.height = h;
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+        const image = await canvasToBase64Jpeg(canvas, 0.62);
+        if (!image) {
+          msgEl.textContent = '인코딩 실패';
+          return;
+        }
+
+        const t0 = performance.now();
+        let url = `${apiBase}/api/hesitation/detect-base64`;
+        let res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image, binary: false })
+        });
+
+        if (res.status === 405 && !apiBase) {
+          apiBase = 'http://localhost:8000';
+          url = `${apiBase}/api/hesitation/detect-base64`;
+          res = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ image, binary: false })
+          });
+        }
+
+        const t1 = performance.now();
+        const latency = Math.round(t1 - t0);
+        latencyEl.textContent = `${latency} ms`;
+        latencyEma = latencyEma * 0.8 + latency * 0.2;
+
+        if (!res.ok) {
+          msgEl.textContent = `API 오류: ${res.status}`;
+          return;
+        }
+
+        const data = await res.json();
+        const pf = data.pose_features || {};
+        drawPoseOverlay(data);
+
+        faceScoreEl.textContent = toFixed3(data.face_score);
+        poseScoreEl.textContent = toFixed3(data.pose_score ?? data.body_score);
+        handHoverEl.textContent = toFixed3(pf.hand_hover);
+        torsoLeanEl.textContent = toFixed3(pf.torso_lean);
+        swayEl.textContent = toFixed3(pf.sway);
+        finalRawEl.textContent = toFixed3(data.final_raw ?? data.confidence);
+        finalEmaEl.textContent = toFixed3(data.final_ema ?? data.confidence);
+
+        setStatus(Boolean(data.is_hesitating), data.status || data.label);
+        msgEl.textContent = data.error ? `오류: ${data.error}` : '정상 수신';
+
+        frameCount += 1;
+        refreshFpsCounter();
+      } catch (e) {
+        msgEl.textContent = '네트워크/서버 오류';
+        console.error(e);
+      } finally {
+        inFlight = false;
+      }
+    }
+
+    startBtn.addEventListener('click', startCamera);
+    stopBtn.addEventListener('click', stopCamera);
+  </script>
+</body>
+</html>

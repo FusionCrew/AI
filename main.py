@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, UploadFile, File
+﻿from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
@@ -8,26 +8,28 @@ import pytz
 import os
 import base64
 import tempfile
+import json
 from dotenv import load_dotenv
 from openai import OpenAI
 from pathlib import Path
 import numpy as np
 import cv2
+from collections import defaultdict
 
 # Load env from Backend folder as user specified
 env_path = Path(__file__).parent.parent / "Backend" / ".env"
 load_dotenv(dotenv_path=env_path)
 
-api_key = os.getenv("OPENAI_API")
+api_key = os.getenv("OPENAI_API") or os.getenv("OPENAI_API_KEY")
 client = OpenAI(api_key=api_key) if api_key else None
 
 app = FastAPI(
     title="AI Kiosk - AI Server",
-    description="MediaPipe Pose와 FaceMesh용 딥러닝 모델 구동 서버 + OpenAI Integration",
+    description="MediaPipe Pose? FaceMesh???λ윭??紐⑤뜽 援щ룞 ?쒕쾭 + OpenAI Integration",
     version="0.2.0"
 )
 
-# CORS 설정
+# CORS ?ㅼ젙
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -60,10 +62,12 @@ class CommonResponse(BaseModel):
 class SttRequest(BaseModel):
     audioBase64: str
     language: str = "ko"
+    mimeType: Optional[str] = "audio/wav"
+    model: Optional[str] = "whisper-1"
 
 class TtsRequest(BaseModel):
     text: str
-    voice: str = "alloy"
+    voice: str = "nova"
     speed: float = 1.0
 
 class ChatMessage(BaseModel):
@@ -75,10 +79,16 @@ class ChatContext(BaseModel):
     userType: Optional[str] = None
     sessionId: Optional[str] = None
     kioskState: Optional[str] = None
+    state: Optional[Dict[str, Any]] = None
 
 class LlmChatRequest(BaseModel):
     messages: List[ChatMessage]
     context: Optional[ChatContext] = None
+    sessionId: Optional[str] = None
+    orderType: Optional[str] = None
+
+# In-memory chat memory by kiosk session.
+CHAT_MEMORY: Dict[str, List[Dict[str, str]]] = defaultdict(list)
 
 class NluRequest(BaseModel):
     utterance: str
@@ -115,24 +125,34 @@ class HesitationRequest(BaseModel):
 # --- YHG-pose Models ---
 
 class HesitationResponse(BaseModel):
-    """망설임 감지 응답 모델"""
+    """Hesitation response model"""
     hesitation_level: int
     confidence: float
     label: str
+    body_score: Optional[float] = None
+    face_score: Optional[float] = None
+    pose_score: Optional[float] = None
+    final_raw: Optional[float] = None
+    final_ema: Optional[float] = None
+    status: Optional[str] = None
+    is_hesitating: Optional[bool] = None
+    pose_features: Optional[Dict[str, Any]] = None
+    pose_points: Optional[List[Dict[str, float]]] = None
+    pose_connections: Optional[List[List[int]]] = None
     probabilities: Optional[List[float]] = None
     error: Optional[str] = None
 
 
 class SignLanguageResponse(BaseModel):
-    """수화 인식 응답 모델"""
+    """?섑솕 ?몄떇 ?묐떟 紐⑤뜽"""
     text: str
     error: Optional[str] = None
 
 
 class Base64ImageRequest(BaseModel):
-    """Base64 이미지 요청 모델"""
+    """Base64 ?대?吏 ?붿껌 紐⑤뜽"""
     image: str  # Base64 encoded image
-    binary: bool = False  # 이진 분류 모드
+    binary: bool = False  # ?댁쭊 遺꾨쪟 紐⑤뱶
 
 # --- Endpoints ---
 
@@ -142,14 +162,23 @@ async def root():
     <html>
     <body>
         <div>
-            <h1>🤖 AI Kiosk - AI Server</h1>
+            <h1>?쨼 AI Kiosk - AI Server</h1>
             <p>FastAPI Server is running with OpenAI Integration.</p>
             <p class="tech">Python + FastAPI + MediaPipe + OpenAI</p>
-            <p style="margin-top: 2rem; font-size: 0.9rem; opacity: 0.7">FusionCrew © 2025~2026</p>
+            <p style="margin-top: 2rem; font-size: 0.9rem; opacity: 0.7">FusionCrew 짤 2025~2026</p>
+            <p><a href="/hesitation" style="color: #00bcd4; text-decoration: none;">?몛 View Hesitation Dashboard</a></p>
         </div>
     </body>
     </html>
     """
+
+@app.get("/hesitation", response_class=HTMLResponse)
+async def hesitation_page():
+    template_path = Path(__file__).parent / "templates" / "hesitation.html"
+    if not template_path.exists():
+        return HTMLResponse(content="<h1>Error: Template not found</h1>", status_code=404)
+    with open(template_path, "r", encoding="utf-8") as f:
+        return HTMLResponse(content=f.read())
 
 @app.get("/health")
 async def health():
@@ -181,35 +210,54 @@ async def stt(request: SttRequest):
     if not client:
         return CommonResponse(success=False, error={"code": "NO_API_KEY", "message": "OpenAI API Key not found"})
 
+    temp_audio_path = None
     try:
-        # Decode Base64 to temp file
-        audio_data = base64.b64decode(request.audioBase64)
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".webm") as temp_audio:
+        # Decode Base64 payload (supports raw base64 and data URL).
+        b64 = request.audioBase64.split(",", 1)[-1]
+        audio_data = base64.b64decode(b64)
+
+        suffix = ".wav"
+        mt = (request.mimeType or "").lower()
+        if "webm" in mt:
+            suffix = ".webm"
+        elif "mp3" in mt or "mpeg" in mt:
+            suffix = ".mp3"
+        elif "mp4" in mt or "m4a" in mt:
+            suffix = ".m4a"
+
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp_audio:
             temp_audio.write(audio_data)
             temp_audio_path = temp_audio.name
 
         # Call OpenAI Whisper
         with open(temp_audio_path, "rb") as audio_file:
             transcript = client.audio.transcriptions.create(
-                model="whisper-1",
+                model=request.model or "whisper-1",
                 file=audio_file,
-                language=request.language
+                language=request.language,
+                prompt="키오스크 주문 대화. 주요 단어: 주문하기, 이전, 뒤로, 버거, 사이드, 음료, 세트, 단품, 결제, 매장, 포장."
             )
         
-        # Cleanup
-        os.remove(temp_audio_path)
-
         return CommonResponse(
             success=True,
             data={
                 "text": transcript.text,
                 "confidence": 0.99 
             },
-            meta={"model": "whisper-1", "provider": "openai"},
+            meta={"model": request.model or "whisper-1", "provider": "openai"},
             requestId=f"req_stt_{int(datetime.now().timestamp())}"
         )
     except Exception as e:
-        return CommonResponse(success=False, error={"code": "STT_FAILED", "message": str(e)})
+        err_msg = str(e)
+        if "invalid_api_key" in err_msg or "Incorrect API key provided" in err_msg:
+            err_msg = "Invalid OpenAI API key"
+        return CommonResponse(success=False, error={"code": "STT_FAILED", "message": err_msg})
+    finally:
+        if temp_audio_path and os.path.exists(temp_audio_path):
+            try:
+                os.remove(temp_audio_path)
+            except Exception:
+                pass
 
 # 2. TTS (OpenAI TTS)
 @app.post("/api/v1/tts")
@@ -220,7 +268,7 @@ async def tts(request: TtsRequest):
     try:
         response = client.audio.speech.create(
             model="tts-1",
-            voice=request.voice if request.voice in ["alloy", "echo", "fable", "onyx", "nova", "shimmer"] else "alloy",
+            voice=request.voice if request.voice in ["alloy", "echo", "fable", "onyx", "nova", "shimmer"] else "nova",
             input=request.text,
             speed=request.speed
         )
@@ -238,17 +286,105 @@ async def tts(request: TtsRequest):
     except Exception as e:
         return CommonResponse(success=False, error={"code": "TTS_FAILED", "message": str(e)})
 
-# 3. Chat (Mock for now, can perform actual LLM call if needed)
 @app.post("/api/v1/llm/chat")
 async def llm_chat(request: LlmChatRequest):
-    return CommonResponse(
-        success=True,
-        data={
-            "reply": f"AI 응답입니다: {request.messages[-1].content}에 대해 확인해보겠습니다.",
-            "intent": "GENERAL"
-        },
-        requestId="req_chat_01"
-    )
+    if not client:
+        return CommonResponse(success=False, error={"code": "NO_API_KEY", "message": "OpenAI API Key not found"})
+
+    try:
+        # Prefer explicit top-level sessionId used by frontend.
+        session_id = request.sessionId or (request.context.sessionId if request.context else None) or "default"
+        order_type = request.orderType or "UNKNOWN"
+
+        latest_user = ""
+        for m in reversed(request.messages):
+            if m.role == "user":
+                latest_user = m.content.strip()
+                break
+        if not latest_user:
+            return CommonResponse(success=False, error={"code": "INVALID_REQUEST", "message": "No user message"})
+
+        # Keep a compact memory window per session.
+        memory = CHAT_MEMORY[session_id][-12:]
+        state = (request.context.state if request.context else None) or {}
+        state_json = json.dumps(state, ensure_ascii=False)
+        system_prompt = (
+            "너는 패스트푸드 키오스크 음성 주문 오케스트레이터다.\n"
+            "반드시 JSON만 출력해라. 스키마:\n"
+            "{"
+            "\"speech\": string, "
+            "\"action\": \"NONE|NAVIGATE|ADD_MENU|REMOVE_MENU|CHANGE_QTY|CHECK_CART|CHECKOUT|SELECT_PAYMENT|CONTINUE_ORDER\", "
+            "\"actionData\": object"
+            "}\n"
+            "규칙:\n"
+            "1) action은 명확할 때만 설정한다. 모호하면 action=NONE으로 두고 speech에서 되묻는다.\n"
+            "2) ADD/REMOVE/CHANGE_QTY는 반드시 menuItemId를 actionData에 넣는다.\n"
+            "3) CHANGE_QTY는 quantity(정수>=1)를 넣는다.\n"
+            "4) SELECT_PAYMENT는 method(CARD|POINT|SIMPLE)를 넣는다.\n"
+            "5) 장바구니가 여러 개인데 사용자가 '빼줘'만 말하면 NONE + 어떤 메뉴를 삭제할지 질문한다.\n"
+            "6) 한국어 존댓말, 한 문장 또는 두 문장 이내.\n"
+            f"현재 주문 타입: {order_type}\n"
+            f"현재 상태(JSON): {state_json}\n"
+        )
+
+        messages = [{"role": "system", "content": system_prompt}] + memory + [{"role": "user", "content": latest_user}]
+
+        resp = client.chat.completions.create(
+            model=os.getenv("OPENAI_CHAT_MODEL", "gpt-4o-mini"),
+            temperature=0.1,
+            messages=messages,
+        )
+        raw = (resp.choices[0].message.content or "").strip()
+        if not raw:
+            raw = "{\"speech\":\"잘 들었어요. 원하시는 메뉴를 한 번 더 말씀해 주세요.\",\"action\":\"NONE\",\"actionData\":{}}"
+
+        parsed = None
+        try:
+            parsed = json.loads(raw)
+        except Exception:
+            # Try to extract JSON block if model wrapped text around it.
+            start = raw.find("{")
+            end = raw.rfind("}")
+            if start != -1 and end != -1 and end > start:
+                try:
+                    parsed = json.loads(raw[start:end + 1])
+                except Exception:
+                    parsed = None
+
+        if not isinstance(parsed, dict):
+            parsed = {
+                "speech": raw if raw else "원하시는 메뉴를 다시 말씀해 주세요.",
+                "action": "NONE",
+                "actionData": {},
+            }
+
+        reply = str(parsed.get("speech") or "").strip() or "원하시는 메뉴를 다시 말씀해 주세요."
+        action = str(parsed.get("action") or "NONE").upper()
+        allowed = {"NONE", "NAVIGATE", "ADD_MENU", "REMOVE_MENU", "CHANGE_QTY", "CHECK_CART", "CHECKOUT", "SELECT_PAYMENT", "CONTINUE_ORDER"}
+        if action not in allowed:
+            action = "NONE"
+        action_data = parsed.get("actionData") if isinstance(parsed.get("actionData"), dict) else {}
+
+        CHAT_MEMORY[session_id].extend([
+            {"role": "user", "content": latest_user},
+            {"role": "assistant", "content": reply},
+        ])
+        CHAT_MEMORY[session_id] = CHAT_MEMORY[session_id][-20:]
+
+        return CommonResponse(
+            success=True,
+            data={
+                "reply": reply,
+                "text": reply,
+                "intent": "GENERAL",
+                "action": action,
+                "actionData": action_data,
+            },
+            meta={"model": os.getenv("OPENAI_CHAT_MODEL", "gpt-4o-mini"), "sessionId": session_id},
+            requestId=f"req_chat_{int(datetime.now().timestamp())}"
+        )
+    except Exception as e:
+        return CommonResponse(success=False, error={"code": "LLM_FAILED", "message": str(e)})
 
 # 4. NLU
 @app.post("/api/v1/nlu/parse")
@@ -267,7 +403,7 @@ async def nlu_parse(request: NluRequest):
 async def llm_suggest(request: LlmSuggestRequest):
     return CommonResponse(
         success=True,
-        data={"suggestion": "메뉴 선택이 어려우시면 추천을 도와드릴게요."},
+        data={"suggestion": "메뉴 선택이 어려우시면 추천 메뉴를 안내해드릴게요."},
         requestId="req_suggest_01"
     )
 
@@ -312,13 +448,13 @@ async def hesitation(request: HesitationRequest):
 @app.post("/api/hesitation/detect", response_model=HesitationResponse)
 async def detect_hesitation_from_image(image: UploadFile = File(...)):
     """
-    이미지에서 망설임 정도 감지
+    ?대?吏?먯꽌 留앹꽕???뺣룄 媛먯?
     
-    - **image**: 이미지 파일 (JPEG, PNG 등)
-    - Returns: 망설임 레벨 (0-3), 신뢰도, 라벨
+    - **image**: ?대?吏 ?뚯씪 (JPEG, PNG ??
+    - Returns: 留앹꽕???덈꺼 (0-3), ?좊ː?? ?쇰꺼
     """
     try:
-        # 이미지 읽기
+        # ?대?吏 ?쎄린
         contents = await image.read()
         nparr = np.frombuffer(contents, np.uint8)
         img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
@@ -326,7 +462,7 @@ async def detect_hesitation_from_image(image: UploadFile = File(...)):
         if img is None:
             raise HTTPException(status_code=400, detail="Failed to decode image")
         
-        # 망설임 감지
+        # 留앹꽕??媛먯?
         from hesitationLearning.inference import detect_hesitation
         result = detect_hesitation(img, binary=False)
         
@@ -342,19 +478,37 @@ async def detect_hesitation_from_image(image: UploadFile = File(...)):
 
 
 @app.post("/api/hesitation/detect-base64", response_model=HesitationResponse)
+@app.post("/api/v1/hesitation/detect-base64", response_model=HesitationResponse)
 async def detect_hesitation_from_base64(request: Base64ImageRequest):
     """
-    Base64 인코딩된 이미지에서 망설임 감지
+    Base64 ?몄퐫?⑸맂 ?대?吏?먯꽌 留앹꽕??媛먯?
     
-    - **image**: Base64 인코딩된 이미지 문자열
-    - **binary**: True면 이진 분류 (망설임/비망설임)
-    - Returns: 망설임 레벨, 신뢰도, 라벨
+    - **image**: Base64 ?몄퐫?⑸맂 ?대?吏 臾몄옄??
+    - **binary**: True硫??댁쭊 遺꾨쪟 (留앹꽕??鍮꾨쭩?ㅼ엫)
+    - Returns: 留앹꽕???덈꺼, ?좊ː?? ?쇰꺼
     """
     try:
         from hesitationLearning.inference import get_detector
         detector = get_detector(binary=request.binary)
         result = detector.detect_from_base64(request.image)
-        
+        if isinstance(result, dict) and result.get("error"):
+            return HesitationResponse(
+                hesitation_level=0,
+                confidence=0.0,
+                label="NORMAL",
+                body_score=0.0,
+                face_score=0.0,
+                pose_score=0.0,
+                final_raw=0.0,
+                final_ema=0.0,
+                status="NORMAL",
+                is_hesitating=False,
+                pose_features={},
+                pose_points=[],
+                pose_connections=[],
+                error=str(result.get("error")),
+            )
+
         return HesitationResponse(**result)
         
     except ImportError:
@@ -368,7 +522,7 @@ async def detect_hesitation_from_base64(request: Base64ImageRequest):
 
 @app.get("/api/hesitation/status")
 async def hesitation_model_status():
-    """망설임 감지 모델 상태 확인"""
+    """留앹꽕??媛먯? 紐⑤뜽 ?곹깭 ?뺤씤"""
     from pathlib import Path
     from hesitationLearning.config import MODEL_PATH, SCALER_PATH
     
@@ -389,16 +543,16 @@ async def hesitation_model_status():
 @app.post("/api/sign-language/translate", response_model=SignLanguageResponse)
 async def translate_sign_language(video: UploadFile = File(...)):
     """
-    수화 비디오 번역 API
+    ?섑솕 鍮꾨뵒??踰덉뿭 API
     
-    - **video**: 비디오 파일 (MP4, AVI 등)
-    - Returns: 번역된 텍스트
+    - **video**: 鍮꾨뵒???뚯씪 (MP4, AVI ??
+    - Returns: 踰덉뿭???띿뒪??
     """
     import tempfile
     import os
     from signLanguage.inference import HandTranslator
     
-    # 임시 파일로 저장
+    # ?꾩떆 ?뚯씪濡????
     with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tmp:
         content = await video.read()
         tmp.write(content)
@@ -406,7 +560,7 @@ async def translate_sign_language(video: UploadFile = File(...)):
         
     try:
         translator = HandTranslator()
-        # 비디오 처리
+        # 鍮꾨뵒??泥섎━
         result_text = translator.process_video(tmp_path)
         
         if result_text is None:
@@ -417,6 +571,7 @@ async def translate_sign_language(video: UploadFile = File(...)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        # 임시 파일 삭제
+        # ?꾩떆 ?뚯씪 ??젣
         if os.path.exists(tmp_path):
             os.remove(tmp_path)
+
