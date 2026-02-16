@@ -186,3 +186,22 @@ uvicorn main:app --reload --port 8001
 ## 👥 팀 정보
 
 **FusionCrew** © 2025~2026
+
+---
+
+## Backend Integration (DB-grounded Menu Q&A)
+
+`/api/v1/llm/chat` answers menu/ingredient/allergen/calorie questions using the Backend DB via HTTP.
+
+Backend endpoints used:
+
+- `GET /api/v1/kiosk/menu-items?size=200`
+- `GET /api/v1/kiosk/menu-items/{menuItemId}`
+
+Configure Backend base URL:
+
+```env
+BACKEND_BASE_URL=http://localhost:8080
+```
+
+If Backend is not reachable, the AI server falls back to the frontend-provided `context.state.menuCatalog` when available.
