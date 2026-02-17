@@ -15,7 +15,10 @@ from typing import Dict, Optional, Union
 import cv2
 import numpy as np
 
-from .emotion_extractor import EmotionDetector
+try:
+    from .emotion_extractor import EmotionDetector  # type: ignore
+except ImportError:
+    EmotionDetector = None  # type: ignore
 from .pose import BodyGestureDetector
 
 
@@ -47,7 +50,9 @@ class HesitationDetector:
             self.config.update(config)
 
         self.body_detector = BodyGestureDetector()
-        self.emotion_detector = None if use_face_stub else EmotionDetector()
+        self.emotion_detector = None
+        if (not use_face_stub) and EmotionDetector is not None:
+            self.emotion_detector = EmotionDetector()
         self.final_ema: Optional[float] = None
 
     def _clamp(self, x: float, lo: float = 0.0, hi: float = 1.0) -> float:
