@@ -125,9 +125,10 @@
           <label>
             캡처해상도
             <select id="captureSize" style="margin-left:4px;">
-              <option value="320x240" selected>320x240 (권장)</option>
+              <option value="320x240">320x240 (저사양)</option>
               <option value="480x360">480x360</option>
-              <option value="640x480">640x480</option>
+              <option value="640x480" selected>640x480 (권장)</option>
+              <option value="800x600">800x600 (고정밀)</option>
             </select>
           </label>
           <label>
@@ -280,7 +281,7 @@
       });
     }
 
-    async function canvasToBase64Jpeg(targetCanvas, quality = 0.62) {
+    async function canvasToBase64Jpeg(targetCanvas, quality = 0.82) {
       const blob = await new Promise((resolve) => targetCanvas.toBlob(resolve, 'image/jpeg', quality));
       if (!blob) return '';
       return blobToBase64(blob);

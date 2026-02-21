@@ -20,6 +20,9 @@ from pathlib import Path
 import numpy as np
 import cv2
 from collections import defaultdict
+import logging
+from v2.orchestrator import V2LangChainOrchestrator
+from v2.vector_index import QdrantMenuVectorStore
 
 # Load env from Backend folder as user specified
 env_path = Path(__file__).parent.parent / "Backend" / ".env"
@@ -33,6 +36,7 @@ app = FastAPI(
     description="MediaPipe Pose? FaceMesh???λ윭??紐⑤뜽 援щ룞 ?쒕쾭 + OpenAI Integration",
     version="0.2.0"
 )
+logger = logging.getLogger("ai.v2")
 
 # CORS ?ㅼ젙
 app.add_middleware(
@@ -265,6 +269,30 @@ async def _ensure_all_details_cached(menu_items: List[Dict[str, Any]], concurren
     if tasks:
         await asyncio.gather(*tasks, return_exceptions=True)
 
+
+v2_orchestrator = V2LangChainOrchestrator(
+    menu_list_provider=_get_kiosk_menu_items_cached,
+    menu_detail_provider=_get_kiosk_menu_detail_cached,
+)
+qdrant_menu_store: Optional[QdrantMenuVectorStore] = None
+if client and os.getenv("QDRANT_URL"):
+    qdrant_menu_store = QdrantMenuVectorStore(
+        openai_client=client,
+        collection_name=os.getenv("QDRANT_MENU_COLLECTION", "kiosk_menu_v2"),
+    )
+
+
+async def _v2_vector_search_candidates(query: str, top_k: int = 6) -> Dict[str, Any]:
+    if not qdrant_menu_store:
+        return {"results": []}
+    return await qdrant_menu_store.search_menus(
+        query=query,
+        top_k=top_k,
+    )
+
+
+v2_orchestrator.set_vector_search_provider(_v2_vector_search_candidates)
+
 class NluRequest(BaseModel):
     utterance: str
 
@@ -275,6 +303,21 @@ class LlmSuggestRequest(BaseModel):
 class LlmSummarizeRequest(BaseModel):
     history: List[ChatMessage]
     sessionId: str
+
+
+class V2VectorSyncRequest(BaseModel):
+    forceRefresh: bool = False
+    size: int = 200
+
+
+class V2VectorSearchRequest(BaseModel):
+    query: str
+    topK: int = 5
+    categoryId: Optional[str] = None
+    includeAllergens: List[str] = []
+    excludeAllergens: List[str] = []
+    minPrice: Optional[float] = None
+    maxPrice: Optional[float] = None
 
 class VisionFrameRequest(BaseModel):
     frameBase64: str
@@ -364,10 +407,12 @@ async def ping():
     return {"message": "pong", "server": "ai-server", "openai_connected": bool(client)}
 
 @app.get("/api/v1/meta/health")
+@app.get("/api/v2/meta/health")
 async def meta_health():
     return {"status": "UP"}
 
 @app.get("/api/v1/meta/models")
+@app.get("/api/v2/meta/models")
 async def meta_models():
     return {
         "models": [
@@ -381,6 +426,7 @@ async def meta_models():
 
 # 1. STT (OpenAI Whisper)
 @app.post("/api/v1/stt")
+@app.post("/api/v2/stt")
 async def stt(request: SttRequest):
     if not client:
         return CommonResponse(success=False, error={"code": "NO_API_KEY", "message": "OpenAI API Key not found"})
@@ -436,6 +482,7 @@ async def stt(request: SttRequest):
 
 # 2. TTS (OpenAI TTS)
 @app.post("/api/v1/tts")
+@app.post("/api/v2/tts")
 async def tts(request: TtsRequest):
     if not client:
         return CommonResponse(success=False, error={"code": "NO_API_KEY", "message": "OpenAI API Key not found"})
@@ -810,8 +857,114 @@ async def llm_chat(request: LlmChatRequest):
     except Exception as e:
         return CommonResponse(success=False, error={"code": "LLM_FAILED", "message": str(e)})
 
+
+@app.post("/api/v2/llm/chat")
+async def llm_chat_v2(request: LlmChatRequest):
+    if not client:
+        return CommonResponse(success=False, error={"code": "NO_API_KEY", "message": "OpenAI API Key not found"})
+
+    request_id = f"req_chat_v2_{int(datetime.now().timestamp())}"
+    started = time.perf_counter()
+    try:
+        session_id = request.sessionId or (request.context.sessionId if request.context else None) or "default"
+
+        pack = await v2_orchestrator.run(
+            request=request,
+            openai_client=client,
+            request_id=request_id,
+        )
+        result = pack.get("result", {})
+        trace = pack.get("trace", [])
+        elapsed_ms = int((time.perf_counter() - started) * 1000)
+        logger.info(
+            "[v2][llm_chat] requestId=%s sessionId=%s elapsedMs=%s action=%s orchestrator=%s trace=%s",
+            request_id,
+            session_id,
+            elapsed_ms,
+            str(result.get("action") or "NONE"),
+            str(result.get("orchestrator") or "unknown"),
+            json.dumps(trace, ensure_ascii=False),
+        )
+
+        return CommonResponse(
+            success=True,
+            data=result,
+            meta={
+                "model": os.getenv("OPENAI_CHAT_MODEL_V2", os.getenv("OPENAI_CHAT_MODEL", "gpt-4o-mini")),
+                "sessionId": session_id,
+                "version": "v2",
+                "elapsedMs": elapsed_ms,
+                "trace": trace,
+            },
+            requestId=request_id,
+        )
+    except Exception:
+        # Keep v2 safe during migration by falling back to the proven v1 path.
+        logger.exception("[v2][llm_chat] requestId=%s fallback_to_v1", request_id)
+        return await llm_chat(request)
+
+
+@app.post("/api/v2/vector/sync-menus")
+async def v2_vector_sync_menus(request: V2VectorSyncRequest):
+    if not qdrant_menu_store:
+        return CommonResponse(
+            success=False,
+            error={"code": "QDRANT_DISABLED", "message": "Qdrant is not configured. Set QDRANT_URL first."},
+        )
+
+    try:
+        menu_items = await _get_kiosk_menu_items_cached(force=bool(request.forceRefresh))
+        if not isinstance(menu_items, list):
+            menu_items = []
+        if request.size > 0:
+            menu_items = menu_items[: int(request.size)]
+
+        result = await qdrant_menu_store.upsert_menu_items(
+            menu_items=menu_items,
+            detail_provider=_get_kiosk_menu_detail_cached,
+        )
+        return CommonResponse(
+            success=True,
+            data=result,
+            meta={"version": "v2", "vectorDb": "qdrant"},
+            requestId=f"req_v2_vec_sync_{int(datetime.now().timestamp())}",
+        )
+    except Exception as e:
+        logger.exception("[v2][vector_sync] failed")
+        return CommonResponse(success=False, error={"code": "VECTOR_SYNC_FAILED", "message": str(e)})
+
+
+@app.post("/api/v2/vector/search-menus")
+async def v2_vector_search_menus(request: V2VectorSearchRequest):
+    if not qdrant_menu_store:
+        return CommonResponse(
+            success=False,
+            error={"code": "QDRANT_DISABLED", "message": "Qdrant is not configured. Set QDRANT_URL first."},
+        )
+
+    try:
+        result = await qdrant_menu_store.search_menus(
+            query=request.query,
+            top_k=request.topK,
+            category_id=request.categoryId,
+            include_allergens=request.includeAllergens or [],
+            exclude_allergens=request.excludeAllergens or [],
+            min_price=request.minPrice,
+            max_price=request.maxPrice,
+        )
+        return CommonResponse(
+            success=True,
+            data=result,
+            meta={"version": "v2", "vectorDb": "qdrant"},
+            requestId=f"req_v2_vec_search_{int(datetime.now().timestamp())}",
+        )
+    except Exception as e:
+        logger.exception("[v2][vector_search] failed")
+        return CommonResponse(success=False, error={"code": "VECTOR_SEARCH_FAILED", "message": str(e)})
+
 # 4. NLU
 @app.post("/api/v1/nlu/parse")
+@app.post("/api/v2/nlu/parse")
 async def nlu_parse(request: NluRequest):
     return CommonResponse(
         success=True,
@@ -824,6 +977,7 @@ async def nlu_parse(request: NluRequest):
 
 # 5. Suggest
 @app.post("/api/v1/llm/suggest")
+@app.post("/api/v2/llm/suggest")
 async def llm_suggest(request: LlmSuggestRequest):
     return CommonResponse(
         success=True,
@@ -833,6 +987,7 @@ async def llm_suggest(request: LlmSuggestRequest):
 
 # 6. Summarize
 @app.post("/api/v1/llm/summarize")
+@app.post("/api/v2/llm/summarize")
 async def llm_summarize(request: LlmSummarizeRequest):
     return CommonResponse(
         success=True,
@@ -845,22 +1000,27 @@ async def llm_summarize(request: LlmSummarizeRequest):
 
 # 7 ~ 11. Vision (Mocks kept as is)
 @app.post("/api/v1/vision/facemesh")
+@app.post("/api/v2/vision/facemesh")
 async def vision_facemesh(request: VisionFrameRequest):
     return CommonResponse(success=True, data={"landmarks": [], "count": 0}, requestId="req_facemesh")
 
 @app.post("/api/v1/vision/pose")
+@app.post("/api/v2/vision/pose")
 async def vision_pose(request: VisionFrameRequest):
     return CommonResponse(success=True, data={"landmarks": []}, requestId="req_pose")
 
 @app.post("/api/v1/vision/hands")
+@app.post("/api/v2/vision/hands")
 async def vision_hands(request: VisionFrameRequest):
     return CommonResponse(success=True, data={"hands": []}, requestId="req_hands")
 
 @app.post("/api/v1/vision/sign-language/interpret")
+@app.post("/api/v2/vision/sign-language/interpret")
 async def sign_language(request: SignLanguageRequest):
     return CommonResponse(success=True, data={"commands": []}, requestId="req_sign")
     
 @app.post("/api/v1/vision/hesitation")
+@app.post("/api/v2/vision/hesitation")
 async def hesitation(request: HesitationRequest):
     return CommonResponse(success=True, data={"score": 0.0, "level": "LOW", "signals": []}, requestId="req_hesitation")
 
@@ -903,6 +1063,7 @@ async def detect_hesitation_from_image(image: UploadFile = File(...)):
 
 @app.post("/api/hesitation/detect-base64", response_model=HesitationResponse)
 @app.post("/api/v1/hesitation/detect-base64", response_model=HesitationResponse)
+@app.post("/api/v2/hesitation/detect-base64", response_model=HesitationResponse)
 async def detect_hesitation_from_base64(request: Base64ImageRequest):
     """
     Base64 ?몄퐫?⑸맂 ?대?吏?먯꽌 留앹꽕??媛먯?
