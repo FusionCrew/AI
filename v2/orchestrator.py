@@ -15,13 +15,18 @@ logger = logging.getLogger(__name__)
 AllowedAction = {
     "NONE",
     "NAVIGATE",
+    "NAVIGATE_CATEGORY",
     "ADD_MENU",
+    "ADD_TO_CART",
     "REMOVE_MENU",
+    "REMOVE_FROM_CART",
     "CHANGE_QTY",
     "CHECK_CART",
     "CHECKOUT",
     "SELECT_PAYMENT",
     "CONTINUE_ORDER",
+    "SET_DINING",
+    "CALL_STAFF",
 }
 
 
@@ -115,7 +120,7 @@ class V2LangChainOrchestrator:
 
         # Auto vector retrieval for ambiguous queries.
         working_state = dict(state) if isinstance(state, dict) else {}
-        if self._is_ambiguous_query(latest_user) and self.vector_search_provider is not None:
+        if (self._is_ambiguous_query(latest_user) or self._is_recommendation_query(latest_user)) and self.vector_search_provider is not None:
             try:
                 vs = await self.vector_search_provider(latest_user, 6)
                 candidates = vs.get("results") if isinstance(vs, dict) else None
@@ -141,6 +146,14 @@ class V2LangChainOrchestrator:
             except Exception:
                 logger.exception("v2 langgraph path failed; falling back to direct OpenAI")
                 mark("langgraph_error")
+
+        policy = await self._run_stage_policy(latest_user, working_state, menu_items)
+        if policy:
+            mark("stage_policy_hit", {"stage": str(policy.get("stage") or "UNKNOWN")})
+            return {
+                "result": self._normalize_output(policy, "stage-policy"),
+                "trace": trace,
+            }
 
         out = await self._run_openai_fallback(openai_client, messages, latest_user, working_state, menu_items, order_type)
         mark("openai_fallback_success", {"requestId": request_id})
@@ -184,24 +197,84 @@ class V2LangChainOrchestrator:
         )
         chain = prompt | structured_llm
 
+        async def session_init_node(graph_state: Dict[str, Any]) -> Dict[str, Any]:
+            stage = self._infer_stage(graph_state.get("state") or {})
+            return {"stage": stage}
+
         async def route_node(graph_state: Dict[str, Any]) -> Dict[str, Any]:
-            # placeholder for future branch expansion
-            _ = graph_state.get("latest_user", "")
-            return {"route": "plan"}
+            text = str(graph_state.get("latest_user") or "")
+            state_obj = graph_state.get("state") if isinstance(graph_state.get("state"), dict) else {}
+            if self._is_hesitation_signal(text, state_obj):
+                return {"route": "policy"}
+            if self._is_recommendation_query(text):
+                return {"route": "recommend"}
+            return {"route": "policy"}
+
+        async def recommend_node(graph_state: Dict[str, Any]) -> Dict[str, Any]:
+            text = str(graph_state.get("latest_user") or "")
+            state_obj = graph_state.get("state") if isinstance(graph_state.get("state"), dict) else {}
+            result = self._build_vector_recommendation_response(text, state_obj)
+            if result:
+                return {"done": True, "result": result}
+            return {"done": False}
+
+        async def policy_node(graph_state: Dict[str, Any]) -> Dict[str, Any]:
+            result = await self._run_stage_policy(
+                user_text=str(graph_state.get("latest_user") or ""),
+                state=graph_state.get("state") if isinstance(graph_state.get("state"), dict) else {},
+                menu_items=graph_state.get("menu_items") if isinstance(graph_state.get("menu_items"), list) else [],
+            )
+            if result:
+                return {"done": True, "result": result}
+            return {"done": False}
 
         async def plan_node(graph_state: Dict[str, Any]) -> Dict[str, Any]:
             res: StructuredAction = await chain.ainvoke({"history_text": graph_state["history_text"]})
             return {"result": res.model_dump()}
 
         graph = StateGraph(dict)
+        graph.add_node("session_init", session_init_node)
         graph.add_node("route", route_node)
+        graph.add_node("recommend", recommend_node)
+        graph.add_node("policy", policy_node)
         graph.add_node("plan", plan_node)
-        graph.set_entry_point("route")
-        graph.add_conditional_edges("route", lambda s: s.get("route", "plan"), {"plan": "plan"})
+        graph.set_entry_point("session_init")
+        graph.add_edge("session_init", "route")
+        graph.add_conditional_edges(
+            "route",
+            lambda s: s.get("route", "policy"),
+            {
+                "recommend": "recommend",
+                "policy": "policy",
+            },
+        )
+        graph.add_conditional_edges(
+            "recommend",
+            lambda s: "done" if bool(s.get("done")) else "policy",
+            {
+                "done": END,
+                "policy": "policy",
+            },
+        )
+        graph.add_conditional_edges(
+            "policy",
+            lambda s: "done" if bool(s.get("done")) else "plan",
+            {
+                "done": END,
+                "plan": "plan",
+            },
+        )
         graph.add_edge("plan", END)
         app = graph.compile()
 
-        result = await app.ainvoke({"history_text": history_text, "latest_user": latest_user})
+        result = await app.ainvoke(
+            {
+                "history_text": history_text,
+                "latest_user": latest_user,
+                "state": state,
+                "menu_items": menu_items,
+            }
+        )
         return result.get("result") or {}
 
     async def _run_openai_fallback(
@@ -266,6 +339,7 @@ class V2LangChainOrchestrator:
             vc = state.get("vectorCandidates")
             if isinstance(vc, list):
                 vector_candidates = vc[:6]
+        stage = self._infer_stage(state if isinstance(state, dict) else {})
 
         return (
             "너는 키오스크 음성 주문 오케스트레이터다.\n"
@@ -273,7 +347,10 @@ class V2LangChainOrchestrator:
             f"허용 action: {sorted(list(AllowedAction))}\n"
             "규칙: menuItemId는 카탈로그에 있는 값만 사용.\n"
             "vectorCandidates는 모호 질의 후보이며 최종 확정은 카탈로그와 문맥으로 하라.\n"
+            "주문 단계(stage)를 고려해 답해라. 결제 전에 결제수단 선택을 유도하지 마라.\n"
+            "응답에는 live2d 감정 애니메이션 병렬 실행을 고려하되, action 결정을 우선하라.\n"
             f"현재 주문 타입: {order_type}\n"
+            f"추론된 단계(stage): {stage}\n"
             f"현재 상태: {json.dumps(state, ensure_ascii=False)}\n"
             f"메뉴 카탈로그: {json.dumps(catalog, ensure_ascii=False)}\n"
             f"Vector 후보: {json.dumps(vector_candidates, ensure_ascii=False)}\n"
@@ -304,6 +381,378 @@ class V2LangChainOrchestrator:
         if isinstance(catalog, list):
             return [it for it in catalog if isinstance(it, dict)]
         return []
+
+    async def _run_stage_policy(
+        self,
+        user_text: str,
+        state: Dict[str, Any],
+        menu_items: List[Dict[str, Any]],
+    ) -> Optional[Dict[str, Any]]:
+        text = (user_text or "").strip()
+        if not text:
+            return None
+
+        stage = self._infer_stage(state)
+        dining_type = str(state.get("diningType") or "").upper()
+        page_hint = state.get("pageHint") if isinstance(state.get("pageHint"), dict) else {}
+        cart_items = state.get("cartItems") if isinstance(state.get("cartItems"), list) else []
+        cart_count = len([x for x in cart_items if isinstance(x, dict)])
+        menu_mention = self._resolve_menu_mention(text, menu_items)
+        quantity = self._extract_quantity(text)
+
+        if self._is_hesitation_signal(text, state):
+            return self._decorate_parallel_channels(
+                {
+                    "speech": "도움이 필요하시면 말씀해 주세요. 주문을 단계별로 도와드릴게요.",
+                    "action": "NONE",
+                    "actionData": {"stage": "PROACTIVE_HELP", "proactiveHelp": True},
+                    "intent": "PROACTIVE_HELP",
+                    "stage": "PROACTIVE_HELP",
+                },
+                emotion="supportive",
+                expression="soft_smile",
+                motion="offer_help",
+            )
+
+        if not dining_type:
+            if any(tok in text for tok in ["매장", "먹고", "여기서"]):
+                return self._decorate_parallel_channels(
+                    {
+                        "speech": "매장 식사로 진행할게요. 원하시는 메뉴를 말씀해 주세요.",
+                        "action": "SET_DINING",
+                        "actionData": {"diningType": "DINE_IN", "stage": "MAIN_MENU"},
+                        "intent": "ORDER_FLOW",
+                        "stage": "MAIN_MENU",
+                    },
+                    emotion="confident",
+                    expression="smile",
+                    motion="confirm",
+                )
+            if any(tok in text for tok in ["포장", "가져", "테이크아웃"]):
+                return self._decorate_parallel_channels(
+                    {
+                        "speech": "포장으로 진행할게요. 원하시는 메뉴를 말씀해 주세요.",
+                        "action": "SET_DINING",
+                        "actionData": {"diningType": "TAKE_OUT", "stage": "MAIN_MENU"},
+                        "intent": "ORDER_FLOW",
+                        "stage": "MAIN_MENU",
+                    },
+                    emotion="confident",
+                    expression="smile",
+                    motion="confirm",
+                )
+            if menu_mention is not None:
+                return self._decorate_parallel_channels(
+                    {
+                        "speech": "좋아요. 먼저 매장 식사인지 포장인지 말씀해 주세요.",
+                        "action": "NONE",
+                        "actionData": {
+                            "pendingMenuItemId": str(menu_mention.get("menuItemId") or ""),
+                            "quantity": quantity,
+                            "stage": "ASK_DINING_TYPE",
+                        },
+                        "intent": "ORDER_FLOW",
+                        "stage": "ASK_DINING_TYPE",
+                    },
+                    emotion="neutral",
+                    expression="attentive",
+                    motion="listen",
+                )
+
+        method = self._extract_payment_method(text)
+        if method:
+            current_payment_step = str(page_hint.get("paymentStep") or "").lower()
+            if cart_count <= 0 and current_payment_step not in {"select", "method", "confirm"}:
+                return self._decorate_parallel_channels(
+                    {
+                        "speech": "결제할 주문이 없어요. 먼저 메뉴를 담아 주세요.",
+                        "action": "NONE",
+                        "actionData": {"stage": stage},
+                        "intent": "ORDER_FLOW",
+                        "stage": stage,
+                    },
+                    emotion="neutral",
+                    expression="attentive",
+                    motion="listen",
+                )
+            return self._decorate_parallel_channels(
+                {
+                    "speech": "선택하신 결제 수단으로 진행할게요.",
+                    "action": "SELECT_PAYMENT",
+                    "actionData": {"method": method, "stage": "PAYMENT"},
+                    "intent": "ORDER_FLOW",
+                    "stage": "PAYMENT",
+                },
+                emotion="confident",
+                expression="smile",
+                motion="confirm",
+            )
+
+        if self._is_checkout_intent(text):
+            if cart_count <= 0:
+                return self._decorate_parallel_channels(
+                    {
+                        "speech": "아직 장바구니가 비어 있어요. 메뉴를 먼저 담아볼까요?",
+                        "action": "NONE",
+                        "actionData": {"stage": stage},
+                        "intent": "ORDER_FLOW",
+                        "stage": stage,
+                    },
+                    emotion="neutral",
+                    expression="attentive",
+                    motion="listen",
+                )
+            return self._decorate_parallel_channels(
+                {
+                    "speech": "주문 내역 화면으로 이동할게요. 확인 후 결제를 진행해 주세요.",
+                    "action": "CHECKOUT",
+                    "actionData": {"stage": "ORDER_REVIEW"},
+                    "intent": "ORDER_FLOW",
+                    "stage": "ORDER_REVIEW",
+                },
+                emotion="confident",
+                expression="smile",
+                motion="confirm",
+            )
+
+        if self._is_check_cart_intent(text):
+            return self._decorate_parallel_channels(
+                {
+                    "speech": "장바구니를 확인해 드릴게요.",
+                    "action": "CHECK_CART",
+                    "actionData": {"stage": "CART"},
+                    "intent": "ORDER_FLOW",
+                    "stage": "CART",
+                },
+                emotion="neutral",
+                expression="attentive",
+                motion="listen",
+            )
+
+        if self._is_continue_order_intent(text):
+            return self._decorate_parallel_channels(
+                {
+                    "speech": "좋아요. 계속 주문을 도와드릴게요.",
+                    "action": "CONTINUE_ORDER",
+                    "actionData": {"stage": "MAIN_MENU"},
+                    "intent": "ORDER_FLOW",
+                    "stage": "MAIN_MENU",
+                },
+                emotion="happy",
+                expression="smile",
+                motion="nod",
+            )
+
+        if self._is_staff_call_intent(text):
+            return self._decorate_parallel_channels(
+                {
+                    "speech": "직원을 호출할게요. 잠시만 기다려 주세요.",
+                    "action": "CALL_STAFF",
+                    "actionData": {"stage": stage},
+                    "intent": "ORDER_FLOW",
+                    "stage": stage,
+                },
+                emotion="supportive",
+                expression="serious",
+                motion="notify",
+            )
+
+        rec = self._build_vector_recommendation_response(text, state)
+        if rec:
+            return rec
+
+        if menu_mention is not None:
+            menu_name = str(menu_mention.get("name") or "선택한 메뉴")
+            menu_item_id = str(menu_mention.get("menuItemId") or "")
+            if menu_item_id:
+                speech = f"{menu_name} {quantity}개를 선택했어요."
+                action_data: Dict[str, Any] = {
+                    "menuItemId": menu_item_id,
+                    "quantity": quantity,
+                    "stage": "CART",
+                }
+                if self._is_set_like(menu_mention):
+                    speech = f"{menu_name} 선택했어요. 사이드 메뉴를 골라 주세요."
+                    action_data["nextStage"] = "SIDE_SELECTION"
+                return self._decorate_parallel_channels(
+                    {
+                        "speech": speech,
+                        "action": "ADD_MENU",
+                        "actionData": action_data,
+                        "intent": "ORDER_FLOW",
+                        "stage": "CART",
+                    },
+                    emotion="happy",
+                    expression="smile",
+                    motion="confirm",
+                )
+
+        return None
+
+    def _build_vector_recommendation_response(self, text: str, state: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        if not self._is_recommendation_query(text):
+            return None
+        candidates = state.get("vectorCandidates") if isinstance(state.get("vectorCandidates"), list) else []
+        candidates = [c for c in candidates if isinstance(c, dict)]
+        if not candidates:
+            return self._decorate_parallel_channels(
+                {
+                    "speech": "조건에 맞는 메뉴를 찾는 중이에요. 알레르기나 원하시는 맛을 조금 더 알려주세요.",
+                    "action": "NONE",
+                    "actionData": {"stage": "RECOMMENDATION"},
+                    "intent": "MENU_RECOMMEND",
+                    "stage": "RECOMMENDATION",
+                },
+                emotion="neutral",
+                expression="attentive",
+                motion="listen",
+            )
+        top = candidates[:3]
+        names = [str(c.get("name") or "").strip() for c in top]
+        names = [n for n in names if n]
+        if not names:
+            return None
+        return self._decorate_parallel_channels(
+            {
+                "speech": f"추천 메뉴로는 {', '.join(names)}가 있어요. 원하시는 메뉴 이름을 말씀해 주세요.",
+                "action": "NONE",
+                "actionData": {
+                    "stage": "RECOMMENDATION",
+                    "recommendationCandidates": [
+                        {
+                            "menuItemId": str(c.get("menuItemId") or ""),
+                            "name": str(c.get("name") or ""),
+                            "score": float(c.get("score") or 0.0),
+                        }
+                        for c in top
+                    ],
+                },
+                "intent": "MENU_RECOMMEND",
+                "stage": "RECOMMENDATION",
+            },
+            emotion="supportive",
+            expression="smile",
+            motion="offer_help",
+        )
+
+    def _infer_stage(self, state: Dict[str, Any]) -> str:
+        if not isinstance(state, dict):
+            return "SESSION_INIT"
+        dining_type = str(state.get("diningType") or "").upper()
+        page_hint = state.get("pageHint") if isinstance(state.get("pageHint"), dict) else {}
+        payment_step = str(page_hint.get("paymentStep") or "").lower()
+        show_order_view = bool(page_hint.get("showOrderView"))
+        category = str(state.get("selectedCategory") or page_hint.get("selectedCategory") or "").lower()
+
+        if not dining_type:
+            return "ASK_DINING_TYPE"
+        if payment_step in {"select", "method", "processing", "confirm"}:
+            return "PAYMENT"
+        if show_order_view:
+            return "ORDER_REVIEW"
+        if category in {"side", "cat_side"}:
+            return "SIDE_SELECTION"
+        if category in {"drink", "cat_drink"}:
+            return "DRINK_SELECTION"
+        return "MAIN_MENU"
+
+    def _is_recommendation_query(self, text: str) -> bool:
+        t = (text or "").replace(" ", "")
+        return any(
+            tok in t
+            for tok in [
+                "추천",
+                "비슷",
+                "알레르기",
+                "없는메뉴",
+                "뭐먹",
+                "어떤메뉴",
+                "모르겠",
+                "고민",
+            ]
+        )
+
+    def _is_hesitation_signal(self, text: str, state: Dict[str, Any]) -> bool:
+        if bool(state.get("isHesitating")):
+            return True
+        score = state.get("hesitationScore")
+        try:
+            if score is not None and float(score) >= 0.6:
+                return True
+        except Exception:
+            pass
+        t = (text or "").replace(" ", "")
+        return any(tok in t for tok in ["모르겠", "어렵", "헷갈", "고민"])
+
+    def _is_checkout_intent(self, text: str) -> bool:
+        t = (text or "").replace(" ", "")
+        return any(tok in t for tok in ["결제", "주문끝", "주문완료", "다담았", "그만고를래"])
+
+    def _is_check_cart_intent(self, text: str) -> bool:
+        t = (text or "").replace(" ", "")
+        return any(tok in t for tok in ["장바구니", "주문내역", "뭐담았", "담은메뉴"])
+
+    def _is_continue_order_intent(self, text: str) -> bool:
+        t = (text or "").replace(" ", "")
+        return any(tok in t for tok in ["계속", "더주문", "추가주문", "다른메뉴"])
+
+    def _is_staff_call_intent(self, text: str) -> bool:
+        t = (text or "").replace(" ", "")
+        return any(tok in t for tok in ["직원", "도움", "사람불러", "문의"])
+
+    def _extract_payment_method(self, text: str) -> Optional[str]:
+        t = (text or "").replace(" ", "").lower()
+        if any(tok in t for tok in ["카드", "card"]):
+            return "CARD"
+        if any(tok in t for tok in ["포인트", "point"]):
+            return "POINT"
+        if any(tok in t for tok in ["간편", "simple", "삼성페이", "애플페이", "네이버페이", "카카오페이"]):
+            return "SIMPLE"
+        return None
+
+    def _extract_quantity(self, text: str) -> int:
+        m = re.search(r"(\d+)\s*(개|개요|개만|개씩|인분)?", text or "")
+        if not m:
+            return 1
+        try:
+            return max(1, int(m.group(1)))
+        except Exception:
+            return 1
+
+    def _is_set_like(self, item: Dict[str, Any]) -> bool:
+        name = str(item.get("name") or "")
+        category = str(item.get("categoryId") or item.get("category") or "").lower()
+        return ("세트" in name) or ("set" in category)
+
+    def _decorate_parallel_channels(
+        self,
+        payload: Dict[str, Any],
+        emotion: str,
+        expression: str,
+        motion: str,
+    ) -> Dict[str, Any]:
+        out = dict(payload)
+        speech = str(out.get("speech") or out.get("reply") or "").strip()
+        out["live2d"] = {
+            "emotion": emotion,
+            "expression": expression,
+            "motion": motion,
+            "ts": datetime.utcnow().isoformat() + "Z",
+        }
+        out["parallel"] = {
+            "runInParallel": True,
+            "tts": {
+                "mode": "stream",
+                "text": speech,
+            },
+            "emotion": {
+                "mode": "event",
+                "emotion": emotion,
+                "expression": expression,
+                "motion": motion,
+            },
+        }
+        return out
 
     async def _run_info_tools(
         self,
@@ -448,7 +897,7 @@ class V2LangChainOrchestrator:
 
     def _is_ingredient_question(self, text: str) -> bool:
         t = text.replace(" ", "")
-        return any(k in t for k in ["재료", "들어가", "들어간", "빼고", "없는", "제외", "포함"])
+        return any(k in t for k in ["재료", "들어가", "들어간", "빼고", "없는", "제외", "포함", "알레르기"])
 
     def _detect_allergen_terms(self, text: str) -> List[str]:
         candidates = ["난류", "우유", "대두", "밀", "토마토", "닭고기", "쇠고기", "돼지고기", "새우", "굴"]
@@ -526,7 +975,7 @@ class V2LangChainOrchestrator:
         action_data = raw.get("actionData")
         if not isinstance(action_data, dict):
             action_data = {}
-        return {
+        out = {
             "reply": speech,
             "text": speech,
             "intent": str(raw.get("intent") or "GENERAL"),
@@ -535,4 +984,13 @@ class V2LangChainOrchestrator:
             "orchestrator": orchestrator_name,
             "generatedAt": datetime.utcnow().isoformat() + "Z",
         }
-
+        live2d = raw.get("live2d")
+        if isinstance(live2d, dict):
+            out["live2d"] = live2d
+        parallel = raw.get("parallel")
+        if isinstance(parallel, dict):
+            out["parallel"] = parallel
+        stage = raw.get("stage")
+        if isinstance(stage, str) and stage:
+            out["stage"] = stage
+        return out

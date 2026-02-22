@@ -1,0 +1,9 @@
+{
+  "dependencies": [
+    "."
+  ],
+  "graphs": {
+    "v2_order_flow": "./v2/studio_graph.py:graph"
+  },
+  "env": ".env"
+}

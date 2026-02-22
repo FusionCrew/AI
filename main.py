@@ -214,7 +214,7 @@ def _is_similarity_question(text: str) -> bool:
 
 def _is_ingredient_question(text: str) -> bool:
     t = text.replace(" ", "")
-    return any(k in t for k in ["재료", "들어가", "들어간", "빼고", "없는", "제외", "포함"])
+    return any(k in t for k in ["재료", "들어가", "들어간", "빼고", "없는", "제외", "포함", "알레르기"])
 
 def _resolve_menu_mention(text: str, menu_items: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     """
@@ -904,6 +904,56 @@ async def llm_chat_v2(request: LlmChatRequest):
         return await llm_chat(request)
 
 
+@app.post("/api/v2/debug/llm/chat")
+async def llm_chat_v2_debug(request: LlmChatRequest):
+    if not client:
+        return CommonResponse(success=False, error={"code": "NO_API_KEY", "message": "OpenAI API Key not found"})
+
+    request_id = f"req_chat_v2_dbg_{int(datetime.now().timestamp())}"
+    started = time.perf_counter()
+    try:
+        session_id = request.sessionId or (request.context.sessionId if request.context else None) or "default"
+        state = (request.context.state if request.context else None) or {}
+        inferred_stage = v2_orchestrator._infer_stage(state if isinstance(state, dict) else {})
+
+        pack = await v2_orchestrator.run(
+            request=request,
+            openai_client=client,
+            request_id=request_id,
+        )
+        result = pack.get("result", {})
+        trace = pack.get("trace", [])
+        elapsed_ms = int((time.perf_counter() - started) * 1000)
+
+        return CommonResponse(
+            success=True,
+            data={
+                "result": result,
+                "trace": trace,
+                "debug": {
+                    "inferredStage": inferred_stage,
+                    "resultStage": result.get("stage"),
+                    "hasVectorCandidatesInState": bool(
+                        isinstance(state, dict) and isinstance(state.get("vectorCandidates"), list) and len(state.get("vectorCandidates")) > 0
+                    ),
+                    "messageCount": len(request.messages or []),
+                    "elapsedMs": elapsed_ms,
+                    "requestId": request_id,
+                },
+            },
+            meta={
+                "model": os.getenv("OPENAI_CHAT_MODEL_V2", os.getenv("OPENAI_CHAT_MODEL", "gpt-4o-mini")),
+                "sessionId": session_id,
+                "version": "v2",
+                "debug": True,
+            },
+            requestId=request_id,
+        )
+    except Exception as e:
+        logger.exception("[v2][llm_chat_debug] requestId=%s failed", request_id)
+        return CommonResponse(success=False, error={"code": "LLM_V2_DEBUG_FAILED", "message": str(e)})
+
+
 @app.post("/api/v2/vector/sync-menus")
 async def v2_vector_sync_menus(request: V2VectorSyncRequest):
     if not qdrant_menu_store:
@@ -1159,4 +1209,3 @@ async def translate_sign_language(video: UploadFile = File(...)):
         # ?꾩떆 ?뚯씪 ??젣
         if os.path.exists(tmp_path):
             os.remove(tmp_path)
-
