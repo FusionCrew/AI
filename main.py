@@ -1,4 +1,4 @@
-﻿from fastapi import FastAPI, HTTPException, UploadFile, File
+﻿from fastapi import FastAPI, HTTPException, UploadFile, File, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
@@ -19,14 +19,21 @@ from openai import OpenAI
 from pathlib import Path
 import numpy as np
 import cv2
-from collections import defaultdict
+from collections import defaultdict, deque
 import logging
 from v2.orchestrator import V2LangChainOrchestrator
+from v2.tracing_utils import traceable_safe
 from v2.vector_index import QdrantMenuVectorStore
 
-# Load env from Backend folder as user specified
-env_path = Path(__file__).parent.parent / "Backend" / ".env"
-load_dotenv(dotenv_path=env_path)
+# Load env in priority order:
+# 1) AI/.env (LangGraph/LangSmith local runtime settings)
+# 2) Backend/.env (legacy/shared settings)
+ai_env_path = Path(__file__).parent / ".env"
+backend_env_path = Path(__file__).parent.parent / "Backend" / ".env"
+if ai_env_path.exists():
+    load_dotenv(dotenv_path=ai_env_path, override=False)
+if backend_env_path.exists():
+    load_dotenv(dotenv_path=backend_env_path, override=False)
 
 api_key = os.getenv("OPENAI_API") or os.getenv("OPENAI_API_KEY")
 client = OpenAI(api_key=api_key) if api_key else None
@@ -37,6 +44,7 @@ app = FastAPI(
     version="0.2.0"
 )
 logger = logging.getLogger("ai.v2")
+logger.info("[startup] ai.v2 main loaded")
 
 # CORS ?ㅼ젙
 app.add_middleware(
@@ -50,6 +58,46 @@ app.add_middleware(
 def get_timestamp():
     korea_timezone = pytz.timezone("Asia/Seoul")
     return datetime.now(korea_timezone).isoformat()
+
+
+def _percentile(values: List[int], q: float) -> int:
+    if not values:
+        return 0
+    arr = sorted(values)
+    if len(arr) == 1:
+        return arr[0]
+    pos = max(0.0, min(1.0, q)) * (len(arr) - 1)
+    lo = int(pos)
+    hi = min(len(arr) - 1, lo + 1)
+    w = pos - lo
+    return int(round(arr[lo] * (1.0 - w) + arr[hi] * w))
+
+
+def _looks_like_recommend_or_info_query(text: str) -> bool:
+    t = re.sub(r"\s+", "", (text or "").lower())
+    tokens = [
+        "추천", "알레르기", "알래르기", "알러지", "알레르겐",
+        "재료", "원재료", "성분", "들어가", "포함", "빼고", "제외",
+        "칼로리", "kcal", "영양",
+    ]
+    return any(tok in t for tok in tokens)
+
+
+def _update_v2_quality_metrics(user_text: str, result: Dict[str, Any], elapsed_ms: int) -> None:
+    _V2_METRICS["total"] += 1
+    if str(result.get("orchestrator") or "") == "openai-fallback":
+        _V2_METRICS["fallback"] += 1
+
+    action = str(result.get("action") or "NONE").upper()
+    if _looks_like_recommend_or_info_query(user_text) and action in {"ADD_MENU", "REMOVE_MENU", "CHANGE_QTY", "CHECKOUT"}:
+        _V2_METRICS["route_mismatch"] += 1
+
+    action_data = result.get("actionData") if isinstance(result.get("actionData"), dict) else {}
+    if str(action_data.get("parser") or "").lower() in {"v2.1", "v2_1"}:
+        _V2_METRICS["parser_applied"] += 1
+
+    if elapsed_ms >= 0:
+        _V2_METRICS["latency_ms"].append(int(elapsed_ms))
 
 # --- Common Models ---
 
@@ -98,12 +146,34 @@ class LlmChatRequest(BaseModel):
 
 # In-memory chat memory by kiosk session.
 CHAT_MEMORY: Dict[str, List[Dict[str, str]]] = defaultdict(list)
+_V2_METRIC_WINDOW = 500
+_V2_METRICS: Dict[str, Any] = {
+    "total": 0,
+    "fallback": 0,
+    "route_mismatch": 0,
+    "parser_applied": 0,
+    "out_of_domain_drop": 0,  # frontend-sent only
+    "latency_ms": deque(maxlen=_V2_METRIC_WINDOW),
+}
 
 BACKEND_BASE_URL = os.getenv("BACKEND_BASE_URL", "http://localhost:8080").rstrip("/")
 
 # Simple in-process caches (avoid repeated HTTP calls from the AI server).
 _MENU_LIST_CACHE: Dict[str, Any] = {"ts": 0.0, "data": None}
 _MENU_DETAIL_CACHE: Dict[str, Dict[str, Any]] = {}
+_MENU_LIST_TTL_SEC = 60
+_MENU_DETAIL_TTL_SEC = 900
+_WARM_CACHE_TASK: Optional[asyncio.Task] = None
+_WARM_CACHE_STATUS: Dict[str, Any] = {
+    "state": "idle",  # idle | running | done | timeout | failed | skipped
+    "startedAt": None,
+    "finishedAt": None,
+    "elapsedMs": None,
+    "timeoutSec": None,
+    "targetItems": 0,
+    "warmedDetails": 0,
+    "error": None,
+}
 
 def _norm_text(s: str) -> str:
     s = (s or "").strip().lower()
@@ -136,7 +206,7 @@ async def _http_get_json_async(url: str, timeout_sec: float = 3.0) -> Dict[str, 
 
 async def _get_kiosk_menu_items_cached(force: bool = False) -> List[Dict[str, Any]]:
     now = time.time()
-    if not force and _MENU_LIST_CACHE["data"] is not None and (now - _MENU_LIST_CACHE["ts"]) < 30:
+    if not force and _MENU_LIST_CACHE["data"] is not None and (now - _MENU_LIST_CACHE["ts"]) < _MENU_LIST_TTL_SEC:
         return _MENU_LIST_CACHE["data"]
 
     qs = urllib.parse.urlencode({"size": 200})
@@ -155,7 +225,7 @@ async def _get_kiosk_menu_detail_cached(menu_item_id: str, force: bool = False) 
         return None
     now = time.time()
     cached = _MENU_DETAIL_CACHE.get(menu_item_id)
-    if not force and cached and (now - cached.get("ts", 0.0)) < 300:
+    if not force and cached and (now - cached.get("ts", 0.0)) < _MENU_DETAIL_TTL_SEC:
         return cached.get("data")
 
     url = f"{BACKEND_BASE_URL}/api/v1/kiosk/menu-items/{urllib.parse.quote(menu_item_id)}"
@@ -263,7 +333,7 @@ async def _ensure_all_details_cached(menu_items: List[Dict[str, Any]], concurren
         if not mid:
             continue
         cached = _MENU_DETAIL_CACHE.get(mid)
-        if cached and (time.time() - cached.get("ts", 0.0)) < 300:
+        if cached and (time.time() - cached.get("ts", 0.0)) < _MENU_DETAIL_TTL_SEC:
             continue
         tasks.append(asyncio.create_task(_one(mid)))
     if tasks:
@@ -292,6 +362,146 @@ async def _v2_vector_search_candidates(query: str, top_k: int = 6) -> Dict[str, 
 
 
 v2_orchestrator.set_vector_search_provider(_v2_vector_search_candidates)
+
+
+@app.on_event("startup")
+async def warm_menu_detail_cache_on_startup():
+    """
+    Warm menu list/detail caches at startup to reduce first-request latency spikes.
+    """
+    enabled = str(os.getenv("AI_WARM_MENU_CACHE_ON_STARTUP", "true")).strip().lower() not in {
+        "0",
+        "false",
+        "off",
+        "no",
+    }
+    if not enabled:
+        _WARM_CACHE_STATUS.update(
+            {
+                "state": "skipped",
+                "startedAt": datetime.utcnow().isoformat() + "Z",
+                "finishedAt": datetime.utcnow().isoformat() + "Z",
+                "elapsedMs": 0,
+                "error": "disabled",
+            }
+        )
+        logger.info("[startup][warm-cache] skipped (disabled)")
+        return
+
+    timeout_sec = float(os.getenv("AI_WARM_MENU_CACHE_TIMEOUT_SEC", "25"))
+    concurrency = int(os.getenv("AI_WARM_MENU_CACHE_CONCURRENCY", "12"))
+
+    async def _warm_background() -> None:
+        started_perf = time.perf_counter()
+        _WARM_CACHE_STATUS.update(
+            {
+                "state": "running",
+                "startedAt": datetime.utcnow().isoformat() + "Z",
+                "finishedAt": None,
+                "elapsedMs": None,
+                "timeoutSec": timeout_sec,
+                "targetItems": 0,
+                "warmedDetails": len(_MENU_DETAIL_CACHE),
+                "error": None,
+            }
+        )
+
+        async def _warm_once() -> int:
+            items = await _get_kiosk_menu_items_cached(force=True)
+            _WARM_CACHE_STATUS["targetItems"] = len(items)
+            await _ensure_all_details_cached(items, concurrency=max(1, concurrency))
+            return len(items)
+
+        try:
+            count = await asyncio.wait_for(_warm_once(), timeout=timeout_sec)
+            elapsed_ms = int((time.perf_counter() - started_perf) * 1000)
+            _WARM_CACHE_STATUS.update(
+                {
+                    "state": "done",
+                    "finishedAt": datetime.utcnow().isoformat() + "Z",
+                    "elapsedMs": elapsed_ms,
+                    "warmedDetails": len(_MENU_DETAIL_CACHE),
+                    "error": None,
+                }
+            )
+            logger.info(
+                "[startup][warm-cache] done items=%s detailCache=%s elapsedMs=%s",
+                count,
+                len(_MENU_DETAIL_CACHE),
+                elapsed_ms,
+            )
+        except asyncio.TimeoutError:
+            elapsed_ms = int((time.perf_counter() - started_perf) * 1000)
+            _WARM_CACHE_STATUS.update(
+                {
+                    "state": "timeout",
+                    "finishedAt": datetime.utcnow().isoformat() + "Z",
+                    "elapsedMs": elapsed_ms,
+                    "warmedDetails": len(_MENU_DETAIL_CACHE),
+                    "error": f"timeout({timeout_sec}s)",
+                }
+            )
+            logger.warning(
+                "[startup][warm-cache] timeout after %ss elapsedMs=%s detailCache=%s",
+                timeout_sec,
+                elapsed_ms,
+                len(_MENU_DETAIL_CACHE),
+            )
+        except Exception as e:
+            elapsed_ms = int((time.perf_counter() - started_perf) * 1000)
+            _WARM_CACHE_STATUS.update(
+                {
+                    "state": "failed",
+                    "finishedAt": datetime.utcnow().isoformat() + "Z",
+                    "elapsedMs": elapsed_ms,
+                    "warmedDetails": len(_MENU_DETAIL_CACHE),
+                    "error": str(e),
+                }
+            )
+            logger.exception("[startup][warm-cache] failed")
+
+    global _WARM_CACHE_TASK
+    if _WARM_CACHE_TASK is None or _WARM_CACHE_TASK.done():
+        _WARM_CACHE_TASK = asyncio.create_task(_warm_background())
+        logger.info("[startup][warm-cache] background task started")
+    else:
+        logger.info("[startup][warm-cache] already running")
+
+
+@app.get("/api/v2/cache/warm-status")
+async def v2_cache_warm_status():
+    return CommonResponse(
+        success=True,
+        data={
+            "status": dict(_WARM_CACHE_STATUS),
+            "menuListCached": _MENU_LIST_CACHE["data"] is not None,
+            "menuListCachedAt": _MENU_LIST_CACHE["ts"] or None,
+            "menuDetailCacheCount": len(_MENU_DETAIL_CACHE),
+            "taskRunning": bool(_WARM_CACHE_TASK and not _WARM_CACHE_TASK.done()),
+        },
+        meta={},
+        requestId=f"req_warm_status_{int(datetime.now().timestamp())}",
+    )
+
+
+@traceable_safe(
+    name="aikiosk.v2.api.llm_chat",
+    run_type="chain",
+    tags=["aikiosk", "v2", "api", "voice-order"],
+)
+async def _run_v2_orchestrator_traced(
+    request: "LlmChatRequest",
+    request_id: str,
+    session_id: str,
+    trace_context: Dict[str, Any],
+    **kwargs: Any,
+) -> Dict[str, Any]:
+    _ = trace_context
+    return await v2_orchestrator.run(
+        request=request,
+        openai_client=client,
+        request_id=request_id,
+    )
 
 class NluRequest(BaseModel):
     utterance: str
@@ -636,7 +846,10 @@ async def llm_chat(request: LlmChatRequest):
                         menu_items = await _get_kiosk_menu_items_cached()
                     except Exception:
                         pass
-                want_exclude = any(k in user_text for k in ["없는", "빼고", "제외"])
+                want_exclude = any(
+                    k in user_text
+                    for k in ["없는", "빼고", "제외", "안들어가", "안들어간", "안들어가는", "미포함", "비포함", "제외한"]
+                )
                 matched = []
                 for it in menu_items:
                     ings = it.get("ingredients") or []
@@ -666,7 +879,10 @@ async def llm_chat(request: LlmChatRequest):
 
         # Allergen include/exclude across menus (requires per-menu detail).
         if allergen_terms and not mentioned:
-            want_exclude = any(k in user_text for k in ["없는", "빼고", "제외"])
+            want_exclude = any(
+                k in user_text
+                for k in ["없는", "빼고", "제외", "안들어가", "안들어간", "안들어가는", "미포함", "비포함", "제외한"]
+            )
             try:
                 await _ensure_all_details_cached(menu_items)
             except Exception:
@@ -859,7 +1075,7 @@ async def llm_chat(request: LlmChatRequest):
 
 
 @app.post("/api/v2/llm/chat")
-async def llm_chat_v2(request: LlmChatRequest):
+async def llm_chat_v2(request: LlmChatRequest, http_request: Request):
     if not client:
         return CommonResponse(success=False, error={"code": "NO_API_KEY", "message": "OpenAI API Key not found"})
 
@@ -868,14 +1084,34 @@ async def llm_chat_v2(request: LlmChatRequest):
     try:
         session_id = request.sessionId or (request.context.sessionId if request.context else None) or "default"
 
-        pack = await v2_orchestrator.run(
+        latest_user = ""
+        for m in reversed(request.messages or []):
+            if str(m.role or "").lower() == "user" and str(m.content or "").strip():
+                latest_user = str(m.content or "").strip()
+                break
+        trace_context = {
+            "requestId": request_id,
+            "sessionId": session_id,
+            "clientSource": http_request.headers.get("x-ai-client-source", "unknown"),
+            "queryPreview": latest_user[:80],
+            "route": "/api/v2/llm/chat",
+        }
+
+        pack = await _run_v2_orchestrator_traced(
             request=request,
-            openai_client=client,
             request_id=request_id,
+            session_id=session_id,
+            trace_context=trace_context,
+            langsmith_extra={
+                "name": "aikiosk.v2.voice_chat",
+                "tags": ["aikiosk", "v2", "voice", "frontend"],
+                "metadata": trace_context,
+            },
         )
         result = pack.get("result", {})
         trace = pack.get("trace", [])
         elapsed_ms = int((time.perf_counter() - started) * 1000)
+        _update_v2_quality_metrics(latest_user, result if isinstance(result, dict) else {}, elapsed_ms)
         logger.info(
             "[v2][llm_chat] requestId=%s sessionId=%s elapsedMs=%s action=%s orchestrator=%s trace=%s",
             request_id,
@@ -895,6 +1131,7 @@ async def llm_chat_v2(request: LlmChatRequest):
                 "version": "v2",
                 "elapsedMs": elapsed_ms,
                 "trace": trace,
+                "traceContext": trace_context,
             },
             requestId=request_id,
         )
@@ -952,6 +1189,56 @@ async def llm_chat_v2_debug(request: LlmChatRequest):
     except Exception as e:
         logger.exception("[v2][llm_chat_debug] requestId=%s failed", request_id)
         return CommonResponse(success=False, error={"code": "LLM_V2_DEBUG_FAILED", "message": str(e)})
+
+
+@app.post("/api/v2/metrics/out-of-domain-drop")
+async def v2_metrics_out_of_domain_drop():
+    _V2_METRICS["out_of_domain_drop"] += 1
+    return CommonResponse(
+        success=True,
+        data={"ok": True, "outOfDomainDrop": int(_V2_METRICS["out_of_domain_drop"])},
+        meta={"version": "v2"},
+        requestId=f"req_v2_metric_ood_{int(datetime.now().timestamp())}",
+    )
+
+
+@app.get("/api/v2/metrics/quality")
+async def v2_metrics_quality():
+    total = int(_V2_METRICS["total"])
+    fallback = int(_V2_METRICS["fallback"])
+    mismatch = int(_V2_METRICS["route_mismatch"])
+    parser_applied = int(_V2_METRICS["parser_applied"])
+    ood = int(_V2_METRICS["out_of_domain_drop"])
+    latency_values = list(_V2_METRICS["latency_ms"])
+    fallback_rate = (fallback / total) if total > 0 else 0.0
+    mismatch_rate = (mismatch / total) if total > 0 else 0.0
+    parser_rate = (parser_applied / total) if total > 0 else 0.0
+    ood_rate = (ood / total) if total > 0 else 0.0
+    return CommonResponse(
+        success=True,
+        data={
+            "window": _V2_METRIC_WINDOW,
+            "counts": {
+                "total": total,
+                "fallback": fallback,
+                "routeMismatch": mismatch,
+                "parserApplied": parser_applied,
+                "outOfDomainDrop": ood,
+            },
+            "rates": {
+                "fallbackRate": fallback_rate,
+                "routeMismatchRate": mismatch_rate,
+                "parserAppliedRate": parser_rate,
+                "outOfDomainDropRate": ood_rate,
+            },
+            "latencyMs": {
+                "p50": _percentile(latency_values, 0.50),
+                "p95": _percentile(latency_values, 0.95),
+            },
+        },
+        meta={"version": "v2"},
+        requestId=f"req_v2_metric_quality_{int(datetime.now().timestamp())}",
+    )
 
 
 @app.post("/api/v2/vector/sync-menus")
@@ -1209,3 +1496,6 @@ async def translate_sign_language(video: UploadFile = File(...)):
         # ?꾩떆 ?뚯씪 ??젣
         if os.path.exists(tmp_path):
             os.remove(tmp_path)
+
+
+

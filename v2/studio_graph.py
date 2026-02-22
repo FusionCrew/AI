@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Optional, TypedDict
 
 from langgraph.graph import END, StateGraph
 
+from v2.menu_info_intent import is_menu_info_query
 from v2.orchestrator import V2LangChainOrchestrator
 
 
@@ -12,6 +13,7 @@ class StudioState(TypedDict, total=False):
     state: Dict[str, Any]
     menu_items: List[Dict[str, Any]]
     stage: str
+    info_done: bool
     route: str
     done: bool
     result: Dict[str, Any]
@@ -61,6 +63,35 @@ def _safe_menu_items(graph_state: StudioState) -> List[Dict[str, Any]]:
 def session_init_node(graph_state: StudioState) -> Dict[str, Any]:
     stage = orch._infer_stage(_safe_state(graph_state))
     return {"stage": stage}
+
+
+async def info_node(graph_state: StudioState) -> Dict[str, Any]:
+    text = _safe_text(graph_state)
+    state = _safe_state(graph_state)
+    menu_items = _safe_menu_items(graph_state)
+    menu_mention = orch._resolve_menu_mention(text, menu_items)
+
+    # Keep recommendation-intent on recommendation route.
+    if menu_mention is None and is_menu_info_query(text) and orch._is_recommendation_query(text):
+        return {"info_done": False}
+
+    info = await orch._run_info_tools(text, menu_items, session_id="studio")
+    if not info:
+        return {"info_done": False}
+
+    stage = orch._infer_stage(state)
+    payload = dict(info)
+    payload.setdefault("stage", stage)
+    return {
+        "info_done": True,
+        "done": True,
+        "result": orch._decorate_parallel_channels(
+            payload,
+            emotion="neutral",
+            expression="attentive",
+            motion="listen",
+        ),
+    }
 
 
 def route_node(graph_state: StudioState) -> Dict[str, Any]:
@@ -218,13 +249,22 @@ def plan_node(graph_state: StudioState) -> Dict[str, Any]:
 def build_graph():
     graph = StateGraph(StudioState)
     graph.add_node("session_init", session_init_node)
+    graph.add_node("info", info_node)
     graph.add_node("route", route_node)
     graph.add_node("recommend", recommend_node)
     graph.add_node("policy", policy_node)
     graph.add_node("plan", plan_node)
 
     graph.set_entry_point("session_init")
-    graph.add_edge("session_init", "route")
+    graph.add_edge("session_init", "info")
+    graph.add_conditional_edges(
+        "info",
+        lambda s: "done" if bool(s.get("info_done")) else "route",
+        {
+            "done": END,
+            "route": "route",
+        },
+    )
     graph.add_conditional_edges(
         "route",
         lambda s: s.get("route", "policy"),

@@ -1,0 +1,3825 @@
+{
+  "generatedAt": "2026-02-22T22:47:15.316108",
+  "apiBase": "http://localhost:8000",
+  "backendBase": "http://localhost:8080",
+  "menuCount": 181,
+  "cases": 100,
+  "scores": {
+    "loose": {
+      "pass": 100,
+      "fail": 0,
+      "accuracy": 1.0
+    },
+    "strict": {
+      "pass": 100,
+      "fail": 0,
+      "accuracy": 1.0
+    }
+  },
+  "caseTypeStats": {
+    "menu_info": {
+      "count": 19,
+      "loosePass": 19,
+      "strictPass": 19
+    },
+    "add_menu": {
+      "count": 27,
+      "loosePass": 27,
+      "strictPass": 27
+    },
+    "payment": {
+      "count": 10,
+      "loosePass": 10,
+      "strictPass": 10
+    },
+    "set_option": {
+      "count": 13,
+      "loosePass": 13,
+      "strictPass": 13
+    },
+    "navigate_category": {
+      "count": 10,
+      "loosePass": 10,
+      "strictPass": 10
+    },
+    "recommend_constraint": {
+      "count": 11,
+      "loosePass": 11,
+      "strictPass": 11
+    },
+    "check_cart": {
+      "count": 10,
+      "loosePass": 10,
+      "strictPass": 10
+    }
+  },
+  "metrics": {
+    "before": {
+      "total": 0,
+      "fallback": 0,
+      "routeMismatch": 0,
+      "outOfDomainDrop": 0
+    },
+    "after": {
+      "total": 100,
+      "fallback": 0,
+      "routeMismatch": 0,
+      "outOfDomainDrop": 0
+    },
+    "delta": {
+      "total": 100,
+      "fallback": 0,
+      "routeMismatch": 0,
+      "outOfDomainDrop": 0
+    },
+    "deltaRates": {
+      "fallbackRate": 0.0,
+      "routeMismatchRate": 0.0
+    },
+    "target": {
+      "fallbackRateMax": 0.05,
+      "fallbackTargetMet": true
+    }
+  },
+  "failedLooseCases": [],
+  "failedStrictCases": [],
+  "rows": [
+    {
+      "caseId": "R044",
+      "caseType": "menu_info",
+      "text": "킹버거 성분 뭐야",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": []
+      },
+      "expectedActions": [
+        "NONE"
+      ],
+      "forbiddenActions": [
+        "ADD_MENU",
+        "CHECKOUT",
+        "REMOVE_MENU",
+        "SELECT_PAYMENT"
+      ],
+      "expectedStage": [
+        "ASK_DINING_TYPE",
+        "MAIN_MENU"
+      ],
+      "actualAction": "NONE",
+      "actualIntent": "MENU_INFO",
+      "actualStage": "MAIN_MENU",
+      "actionData": {
+        "stage": "MAIN_MENU"
+      },
+      "orchestrator": "tool-fastpath",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R023",
+      "caseType": "add_menu",
+      "text": "치르르버거세트 하나 담아줘",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": []
+      },
+      "expectedActions": [
+        "ADD_MENU",
+        "NONE"
+      ],
+      "forbiddenActions": null,
+      "expectedStage": [
+        "CART",
+        "MAIN_MENU"
+      ],
+      "actualAction": "ADD_MENU",
+      "actualIntent": "ORDER_FLOW",
+      "actualStage": "CART",
+      "actionData": {
+        "menuItemId": "kfc_burger_028",
+        "quantity": 1,
+        "stage": "CART",
+        "parser": "v2.1",
+        "reason": "menu_add",
+        "fsm": "v2.1",
+        "fsmReason": "ok"
+      },
+      "orchestrator": "langgraph",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R077",
+      "caseType": "payment",
+      "text": "포인트로 결제할게",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": [
+          {
+            "menuItemId": "menu_4007",
+            "quantity": 1
+          }
+        ]
+      },
+      "expectedActions": [
+        "CHECKOUT",
+        "NONE",
+        "SELECT_PAYMENT"
+      ],
+      "forbiddenActions": null,
+      "expectedStage": [
+        "MAIN_MENU",
+        "ORDER_REVIEW",
+        "PAYMENT"
+      ],
+      "actualAction": "SELECT_PAYMENT",
+      "actualIntent": "ORDER_FLOW",
+      "actualStage": "PAYMENT",
+      "actionData": {
+        "method": "POINT",
+        "stage": "PAYMENT",
+        "parser": "v2.1",
+        "reason": "pay_point",
+        "fsm": "v2.1",
+        "fsmReason": "ok"
+      },
+      "orchestrator": "langgraph",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R110",
+      "caseType": "set_option",
+      "text": "음료는 환타오렌지(M)로 할게",
+      "state": {
+        "stage": "SIDE_SELECTION",
+        "diningType": "DINE_IN",
+        "pageHint": {
+          "selectedCategory": "cat_side"
+        },
+        "cartItems": [
+          {
+            "menuItemId": "kfc_set_005",
+            "quantity": 1
+          }
+        ]
+      },
+      "expectedActions": [
+        "ADD_MENU",
+        "CHANGE_QTY",
+        "NAVIGATE_CATEGORY",
+        "NONE"
+      ],
+      "forbiddenActions": null,
+      "expectedStage": [
+        "CART",
+        "DRINK_SELECTION",
+        "SIDE_SELECTION"
+      ],
+      "actualAction": "NONE",
+      "actualIntent": "ORDER_FLOW",
+      "actualStage": "DRINK_SELECTION",
+      "actionData": {
+        "stage": "DRINK_SELECTION"
+      },
+      "orchestrator": "langgraph",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R082",
+      "caseType": "payment",
+      "text": "포인트로 결제할게",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": [
+          {
+            "menuItemId": "kfc_set_002",
+            "quantity": 1
+          }
+        ],
+        "pageHint": {
+          "paymentStep": "select"
+        }
+      },
+      "expectedActions": [
+        "CHECKOUT",
+        "NONE",
+        "SELECT_PAYMENT"
+      ],
+      "forbiddenActions": null,
+      "expectedStage": [
+        "MAIN_MENU",
+        "ORDER_REVIEW",
+        "PAYMENT"
+      ],
+      "actualAction": "SELECT_PAYMENT",
+      "actualIntent": "ORDER_FLOW",
+      "actualStage": "PAYMENT",
+      "actionData": {
+        "method": "POINT",
+        "stage": "PAYMENT",
+        "parser": "v2.1",
+        "reason": "pay_point",
+        "fsm": "v2.1",
+        "fsmReason": "ok"
+      },
+      "orchestrator": "langgraph",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R042",
+      "caseType": "menu_info",
+      "text": "허니콤보치킨(쏘이치킨) 2조각 kcal 얼마야",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": []
+      },
+      "expectedActions": [
+        "NONE"
+      ],
+      "forbiddenActions": [
+        "ADD_MENU",
+        "CHECKOUT",
+        "REMOVE_MENU",
+        "SELECT_PAYMENT"
+      ],
+      "expectedStage": [
+        "ASK_DINING_TYPE",
+        "MAIN_MENU"
+      ],
+      "actualAction": "NONE",
+      "actualIntent": "MENU_INFO",
+      "actualStage": "MAIN_MENU",
+      "actionData": {
+        "stage": "MAIN_MENU"
+      },
+      "orchestrator": "tool-fastpath",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R019",
+      "caseType": "add_menu",
+      "text": "더블치즈버거세트 하나 담아줘",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": []
+      },
+      "expectedActions": [
+        "ADD_MENU",
+        "NONE"
+      ],
+      "forbiddenActions": null,
+      "expectedStage": [
+        "CART",
+        "MAIN_MENU"
+      ],
+      "actualAction": "ADD_MENU",
+      "actualIntent": "ORDER_FLOW",
+      "actualStage": "CART",
+      "actionData": {
+        "menuItemId": "menu_004",
+        "quantity": 1,
+        "stage": "CART",
+        "parser": "v2.1",
+        "reason": "menu_add",
+        "fsm": "v2.1",
+        "fsmReason": "ok"
+      },
+      "orchestrator": "langgraph",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R013",
+      "caseType": "add_menu",
+      "text": "타워버거 2개 추가해줘",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": []
+      },
+      "expectedActions": [
+        "ADD_MENU",
+        "NONE"
+      ],
+      "forbiddenActions": null,
+      "expectedStage": [
+        "CART",
+        "MAIN_MENU"
+      ],
+      "actualAction": "ADD_MENU",
+      "actualIntent": "ORDER_FLOW",
+      "actualStage": "CART",
+      "actionData": {
+        "menuItemId": "kfc_burger_002",
+        "quantity": 2,
+        "stage": "CART",
+        "parser": "v2.1",
+        "reason": "menu_add",
+        "fsm": "v2.1",
+        "fsmReason": "ok"
+      },
+      "orchestrator": "langgraph",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R032",
+      "caseType": "menu_info",
+      "text": "마일드핫징거버거세트 알레르기 정보 알려줘",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": []
+      },
+      "expectedActions": [
+        "NONE"
+      ],
+      "forbiddenActions": [
+        "ADD_MENU",
+        "CHECKOUT",
+        "REMOVE_MENU",
+        "SELECT_PAYMENT"
+      ],
+      "expectedStage": [
+        "ASK_DINING_TYPE",
+        "MAIN_MENU"
+      ],
+      "actualAction": "NONE",
+      "actualIntent": "MENU_INFO",
+      "actualStage": "MAIN_MENU",
+      "actionData": {
+        "stage": "MAIN_MENU"
+      },
+      "orchestrator": "tool-fastpath",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R035",
+      "caseType": "menu_info",
+      "text": "콤보세트 알래르기 알려줘",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": []
+      },
+      "expectedActions": [
+        "NONE"
+      ],
+      "forbiddenActions": [
+        "ADD_MENU",
+        "CHECKOUT",
+        "REMOVE_MENU",
+        "SELECT_PAYMENT"
+      ],
+      "expectedStage": [
+        "ASK_DINING_TYPE",
+        "MAIN_MENU"
+      ],
+      "actualAction": "NONE",
+      "actualIntent": "MENU_INFO",
+      "actualStage": "MAIN_MENU",
+      "actionData": {
+        "stage": "MAIN_MENU"
+      },
+      "orchestrator": "tool-fastpath",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R087",
+      "caseType": "navigate_category",
+      "text": "사이드 메뉴 보여줘",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": []
+      },
+      "expectedActions": [
+        "CONTINUE_ORDER",
+        "NAVIGATE_CATEGORY",
+        "NONE"
+      ],
+      "forbiddenActions": null,
+      "expectedStage": [
+        "MAIN_MENU"
+      ],
+      "actualAction": "NAVIGATE_CATEGORY",
+      "actualIntent": "ORDER_FLOW",
+      "actualStage": "MAIN_MENU",
+      "actionData": {
+        "categoryKey": "side",
+        "stage": "MAIN_MENU",
+        "parser": "v2.1",
+        "reason": "category_nav",
+        "fsm": "v2.1",
+        "fsmReason": "ok"
+      },
+      "orchestrator": "langgraph",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R002",
+      "caseType": "add_menu",
+      "text": "블랙라벨폴인치즈버거 주문할게",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": []
+      },
+      "expectedActions": [
+        "ADD_MENU",
+        "NONE"
+      ],
+      "forbiddenActions": null,
+      "expectedStage": [
+        "CART",
+        "MAIN_MENU"
+      ],
+      "actualAction": "ADD_MENU",
+      "actualIntent": "ORDER_FLOW",
+      "actualStage": "CART",
+      "actionData": {
+        "menuItemId": "kfc_burger_007",
+        "quantity": 1,
+        "stage": "CART",
+        "parser": "v2.1",
+        "reason": "menu_add",
+        "fsm": "v2.1",
+        "fsmReason": "ok"
+      },
+      "orchestrator": "langgraph",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R029",
+      "caseType": "add_menu",
+      "text": "치즈타워버거세트 하나 담아줘",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": []
+      },
+      "expectedActions": [
+        "ADD_MENU",
+        "NONE"
+      ],
+      "forbiddenActions": null,
+      "expectedStage": [
+        "CART",
+        "MAIN_MENU"
+      ],
+      "actualAction": "ADD_MENU",
+      "actualIntent": "ORDER_FLOW",
+      "actualStage": "CART",
+      "actionData": {
+        "menuItemId": "kfc_burger_002",
+        "quantity": 1,
+        "stage": "CART",
+        "parser": "v2.1",
+        "reason": "menu_add",
+        "fsm": "v2.1",
+        "fsmReason": "ok"
+      },
+      "orchestrator": "langgraph",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R054",
+      "caseType": "recommend_constraint",
+      "text": "WHEAT 제외 메뉴 추천",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": []
+      },
+      "expectedActions": [
+        "NONE"
+      ],
+      "forbiddenActions": [
+        "ADD_MENU",
+        "CHECKOUT"
+      ],
+      "expectedStage": [
+        "MAIN_MENU"
+      ],
+      "actualAction": "NONE",
+      "actualIntent": "RECOMMENDATION",
+      "actualStage": "MAIN_MENU",
+      "actionData": {
+        "stage": "MAIN_MENU"
+      },
+      "orchestrator": "langgraph",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R100",
+      "caseType": "set_option",
+      "text": "미디엄 사이즈로 해줘",
+      "state": {
+        "stage": "SIDE_SELECTION",
+        "diningType": "DINE_IN",
+        "pageHint": {
+          "selectedCategory": "cat_side"
+        },
+        "cartItems": [
+          {
+            "menuItemId": "kfc_burger_021",
+            "quantity": 1
+          }
+        ]
+      },
+      "expectedActions": [
+        "ADD_MENU",
+        "CHANGE_QTY",
+        "NAVIGATE_CATEGORY",
+        "NONE"
+      ],
+      "forbiddenActions": null,
+      "expectedStage": [
+        "CART",
+        "DRINK_SELECTION",
+        "SIDE_SELECTION"
+      ],
+      "actualAction": "CHANGE_QTY",
+      "actualIntent": "ORDER_FLOW",
+      "actualStage": "SIDE_SELECTION",
+      "actionData": {
+        "stage": "SIDE_SELECTION",
+        "optionType": "SIZE"
+      },
+      "orchestrator": "langgraph",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R004",
+      "caseType": "add_menu",
+      "text": "아메리카노(HOT) 하나 담아줘",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": []
+      },
+      "expectedActions": [
+        "ADD_MENU",
+        "NONE"
+      ],
+      "forbiddenActions": null,
+      "expectedStage": [
+        "CART",
+        "MAIN_MENU"
+      ],
+      "actualAction": "ADD_MENU",
+      "actualIntent": "ORDER_FLOW",
+      "actualStage": "CART",
+      "actionData": {
+        "menuItemId": "kfc_drink_006",
+        "quantity": 1,
+        "stage": "CART",
+        "parser": "v2.1",
+        "reason": "menu_add",
+        "fsm": "v2.1",
+        "fsmReason": "ok"
+      },
+      "orchestrator": "langgraph",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R056",
+      "caseType": "recommend_constraint",
+      "text": "대두 안 들어간 메뉴 추천해줘",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": []
+      },
+      "expectedActions": [
+        "NONE"
+      ],
+      "forbiddenActions": [
+        "ADD_MENU",
+        "CHECKOUT"
+      ],
+      "expectedStage": [
+        "MAIN_MENU"
+      ],
+      "actualAction": "NONE",
+      "actualIntent": "RECOMMENDATION",
+      "actualStage": "MAIN_MENU",
+      "actionData": {
+        "stage": "MAIN_MENU"
+      },
+      "orchestrator": "langgraph",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R036",
+      "caseType": "menu_info",
+      "text": "바비큐치킨버거세트 재료 알려줘",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": []
+      },
+      "expectedActions": [
+        "NONE"
+      ],
+      "forbiddenActions": [
+        "ADD_MENU",
+        "CHECKOUT",
+        "REMOVE_MENU",
+        "SELECT_PAYMENT"
+      ],
+      "expectedStage": [
+        "ASK_DINING_TYPE",
+        "MAIN_MENU"
+      ],
+      "actualAction": "NONE",
+      "actualIntent": "MENU_INFO",
+      "actualStage": "MAIN_MENU",
+      "actionData": {
+        "stage": "MAIN_MENU"
+      },
+      "orchestrator": "tool-fastpath",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R071",
+      "caseType": "check_cart",
+      "text": "장바구니 보여줘",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": [
+          {
+            "menuItemId": "menu_6014",
+            "quantity": 1
+          }
+        ]
+      },
+      "expectedActions": [
+        "CHECK_CART",
+        "NONE"
+      ],
+      "forbiddenActions": null,
+      "expectedStage": [
+        "CART",
+        "MAIN_MENU"
+      ],
+      "actualAction": "CHECK_CART",
+      "actualIntent": "ORDER_FLOW",
+      "actualStage": "CART",
+      "actionData": {
+        "stage": "CART",
+        "parser": "v2.1",
+        "reason": "cart_query",
+        "fsm": "v2.1",
+        "fsmReason": "ok"
+      },
+      "orchestrator": "langgraph",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R069",
+      "caseType": "check_cart",
+      "text": "지금 고른 메뉴 뭐야",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": [
+          {
+            "menuItemId": "menu_4014",
+            "quantity": 1
+          }
+        ]
+      },
+      "expectedActions": [
+        "CHECK_CART",
+        "NONE"
+      ],
+      "forbiddenActions": null,
+      "expectedStage": [
+        "CART",
+        "MAIN_MENU"
+      ],
+      "actualAction": "NONE",
+      "actualIntent": "MENU_INFO",
+      "actualStage": "MAIN_MENU",
+      "actionData": {
+        "stage": "MAIN_MENU"
+      },
+      "orchestrator": "tool-fastpath",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R018",
+      "caseType": "add_menu",
+      "text": "생수 2개 추가해줘",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": []
+      },
+      "expectedActions": [
+        "ADD_MENU",
+        "NONE"
+      ],
+      "forbiddenActions": null,
+      "expectedStage": [
+        "CART",
+        "MAIN_MENU"
+      ],
+      "actualAction": "ADD_MENU",
+      "actualIntent": "ORDER_FLOW",
+      "actualStage": "CART",
+      "actionData": {
+        "menuItemId": "kfc_drink_010",
+        "quantity": 2,
+        "stage": "CART",
+        "parser": "v2.1",
+        "reason": "menu_add",
+        "fsm": "v2.1",
+        "fsmReason": "ok"
+      },
+      "orchestrator": "langgraph",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R015",
+      "caseType": "add_menu",
+      "text": "비스켓 하나 담아줘",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": []
+      },
+      "expectedActions": [
+        "ADD_MENU",
+        "NONE"
+      ],
+      "forbiddenActions": null,
+      "expectedStage": [
+        "CART",
+        "MAIN_MENU"
+      ],
+      "actualAction": "ADD_MENU",
+      "actualIntent": "ORDER_FLOW",
+      "actualStage": "CART",
+      "actionData": {
+        "menuItemId": "kfc_side_002",
+        "quantity": 1,
+        "stage": "CART",
+        "parser": "v2.1",
+        "reason": "menu_add",
+        "fsm": "v2.1",
+        "fsmReason": "ok"
+      },
+      "orchestrator": "langgraph",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R093",
+      "caseType": "navigate_category",
+      "text": "세트 메뉴 보여줘",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": []
+      },
+      "expectedActions": [
+        "CONTINUE_ORDER",
+        "NAVIGATE_CATEGORY",
+        "NONE"
+      ],
+      "forbiddenActions": null,
+      "expectedStage": [
+        "MAIN_MENU"
+      ],
+      "actualAction": "NAVIGATE_CATEGORY",
+      "actualIntent": "ORDER_FLOW",
+      "actualStage": "MAIN_MENU",
+      "actionData": {
+        "categoryKey": "set",
+        "stage": "MAIN_MENU",
+        "parser": "v2.1",
+        "reason": "category_nav",
+        "fsm": "v2.1",
+        "fsmReason": "ok"
+      },
+      "orchestrator": "langgraph",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R010",
+      "caseType": "add_menu",
+      "text": "순살치킨(블랙라벨) 4조각 세 개 담아",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": []
+      },
+      "expectedActions": [
+        "ADD_MENU",
+        "NONE"
+      ],
+      "forbiddenActions": null,
+      "expectedStage": [
+        "CART",
+        "MAIN_MENU"
+      ],
+      "actualAction": "ADD_MENU",
+      "actualIntent": "ORDER_FLOW",
+      "actualStage": "CART",
+      "actionData": {
+        "menuItemId": "menu_4008",
+        "quantity": 4,
+        "stage": "CART",
+        "parser": "v2.1",
+        "reason": "menu_add",
+        "fsm": "v2.1",
+        "fsmReason": "ok"
+      },
+      "orchestrator": "langgraph",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R092",
+      "caseType": "navigate_category",
+      "text": "세트 메뉴 보여줘",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": []
+      },
+      "expectedActions": [
+        "CONTINUE_ORDER",
+        "NAVIGATE_CATEGORY",
+        "NONE"
+      ],
+      "forbiddenActions": null,
+      "expectedStage": [
+        "MAIN_MENU"
+      ],
+      "actualAction": "NAVIGATE_CATEGORY",
+      "actualIntent": "ORDER_FLOW",
+      "actualStage": "MAIN_MENU",
+      "actionData": {
+        "categoryKey": "set",
+        "stage": "MAIN_MENU",
+        "parser": "v2.1",
+        "reason": "category_nav",
+        "fsm": "v2.1",
+        "fsmReason": "ok"
+      },
+      "orchestrator": "langgraph",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R091",
+      "caseType": "navigate_category",
+      "text": "치킨 카테고리로 가줘",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": []
+      },
+      "expectedActions": [
+        "CONTINUE_ORDER",
+        "NAVIGATE_CATEGORY",
+        "NONE"
+      ],
+      "forbiddenActions": null,
+      "expectedStage": [
+        "MAIN_MENU"
+      ],
+      "actualAction": "NAVIGATE_CATEGORY",
+      "actualIntent": "ORDER_FLOW",
+      "actualStage": "MAIN_MENU",
+      "actionData": {
+        "categoryKey": "chicken",
+        "stage": "MAIN_MENU",
+        "parser": "v2.1",
+        "reason": "category_nav",
+        "fsm": "v2.1",
+        "fsmReason": "ok"
+      },
+      "orchestrator": "langgraph",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R076",
+      "caseType": "payment",
+      "text": "주문 완료할게",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": [
+          {
+            "menuItemId": "kfc_burger_001",
+            "quantity": 1
+          }
+        ],
+        "pageHint": {
+          "paymentStep": "select"
+        }
+      },
+      "expectedActions": [
+        "CHECKOUT",
+        "NONE"
+      ],
+      "forbiddenActions": null,
+      "expectedStage": [
+        "MAIN_MENU",
+        "ORDER_REVIEW",
+        "PAYMENT"
+      ],
+      "actualAction": "CHECKOUT",
+      "actualIntent": "ORDER_FLOW",
+      "actualStage": "ORDER_REVIEW",
+      "actionData": {
+        "stage": "ORDER_REVIEW"
+      },
+      "orchestrator": "langgraph",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R012",
+      "caseType": "add_menu",
+      "text": "스콜쳐버거플러스세트 세 개 담아",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": []
+      },
+      "expectedActions": [
+        "ADD_MENU",
+        "NONE"
+      ],
+      "forbiddenActions": null,
+      "expectedStage": [
+        "CART",
+        "MAIN_MENU"
+      ],
+      "actualAction": "ADD_MENU",
+      "actualIntent": "ORDER_FLOW",
+      "actualStage": "CART",
+      "actionData": {
+        "menuItemId": "kfc_burger_011",
+        "quantity": 1,
+        "stage": "CART",
+        "parser": "v2.1",
+        "reason": "menu_add",
+        "fsm": "v2.1",
+        "fsmReason": "ok"
+      },
+      "orchestrator": "langgraph",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R033",
+      "caseType": "menu_info",
+      "text": "머쉬룸버거세트 재료 알려줘",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": []
+      },
+      "expectedActions": [
+        "NONE"
+      ],
+      "forbiddenActions": [
+        "ADD_MENU",
+        "CHECKOUT",
+        "REMOVE_MENU",
+        "SELECT_PAYMENT"
+      ],
+      "expectedStage": [
+        "ASK_DINING_TYPE",
+        "MAIN_MENU"
+      ],
+      "actualAction": "NONE",
+      "actualIntent": "MENU_INFO",
+      "actualStage": "MAIN_MENU",
+      "actionData": {
+        "stage": "MAIN_MENU"
+      },
+      "orchestrator": "tool-fastpath",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R080",
+      "caseType": "payment",
+      "text": "포인트로 결제할게",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": [
+          {
+            "menuItemId": "menu_6003",
+            "quantity": 1
+          }
+        ]
+      },
+      "expectedActions": [
+        "CHECKOUT",
+        "NONE",
+        "SELECT_PAYMENT"
+      ],
+      "forbiddenActions": null,
+      "expectedStage": [
+        "MAIN_MENU",
+        "ORDER_REVIEW",
+        "PAYMENT"
+      ],
+      "actualAction": "SELECT_PAYMENT",
+      "actualIntent": "ORDER_FLOW",
+      "actualStage": "PAYMENT",
+      "actionData": {
+        "method": "POINT",
+        "stage": "PAYMENT",
+        "parser": "v2.1",
+        "reason": "pay_point",
+        "fsm": "v2.1",
+        "fsmReason": "ok"
+      },
+      "orchestrator": "langgraph",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R046",
+      "caseType": "menu_info",
+      "text": "자몽에이드 칼로리 알려줘",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": []
+      },
+      "expectedActions": [
+        "NONE"
+      ],
+      "forbiddenActions": [
+        "ADD_MENU",
+        "CHECKOUT",
+        "REMOVE_MENU",
+        "SELECT_PAYMENT"
+      ],
+      "expectedStage": [
+        "ASK_DINING_TYPE",
+        "MAIN_MENU"
+      ],
+      "actualAction": "NONE",
+      "actualIntent": "MENU_INFO",
+      "actualStage": "MAIN_MENU",
+      "actionData": {
+        "stage": "MAIN_MENU"
+      },
+      "orchestrator": "tool-fastpath",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R047",
+      "caseType": "menu_info",
+      "text": "핫크리스피버거세트 kcal 얼마야",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": []
+      },
+      "expectedActions": [
+        "NONE"
+      ],
+      "forbiddenActions": [
+        "ADD_MENU",
+        "CHECKOUT",
+        "REMOVE_MENU",
+        "SELECT_PAYMENT"
+      ],
+      "expectedStage": [
+        "ASK_DINING_TYPE",
+        "MAIN_MENU"
+      ],
+      "actualAction": "NONE",
+      "actualIntent": "MENU_INFO",
+      "actualStage": "MAIN_MENU",
+      "actionData": {
+        "stage": "MAIN_MENU"
+      },
+      "orchestrator": "tool-fastpath",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R051",
+      "caseType": "recommend_constraint",
+      "text": "대두 안 들어간 메뉴 추천해줘",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": []
+      },
+      "expectedActions": [
+        "NONE"
+      ],
+      "forbiddenActions": [
+        "ADD_MENU",
+        "CHECKOUT"
+      ],
+      "expectedStage": [
+        "MAIN_MENU"
+      ],
+      "actualAction": "NONE",
+      "actualIntent": "RECOMMENDATION",
+      "actualStage": "MAIN_MENU",
+      "actionData": {
+        "stage": "MAIN_MENU"
+      },
+      "orchestrator": "langgraph",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R078",
+      "caseType": "payment",
+      "text": "카드 결제할게",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": [
+          {
+            "menuItemId": "menu_4008",
+            "quantity": 1
+          }
+        ]
+      },
+      "expectedActions": [
+        "CHECKOUT",
+        "NONE",
+        "SELECT_PAYMENT"
+      ],
+      "forbiddenActions": null,
+      "expectedStage": [
+        "MAIN_MENU",
+        "ORDER_REVIEW",
+        "PAYMENT"
+      ],
+      "actualAction": "SELECT_PAYMENT",
+      "actualIntent": "ORDER_FLOW",
+      "actualStage": "PAYMENT",
+      "actionData": {
+        "method": "CARD",
+        "stage": "PAYMENT",
+        "parser": "v2.1",
+        "reason": "pay_card",
+        "fsm": "v2.1",
+        "fsmReason": "ok"
+      },
+      "orchestrator": "langgraph",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R058",
+      "caseType": "recommend_constraint",
+      "text": "대두 없는 메뉴 뭐 있어",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": []
+      },
+      "expectedActions": [
+        "NONE"
+      ],
+      "forbiddenActions": [
+        "ADD_MENU",
+        "CHECKOUT"
+      ],
+      "expectedStage": [
+        "MAIN_MENU"
+      ],
+      "actualAction": "NONE",
+      "actualIntent": "MENU_INFO",
+      "actualStage": "MAIN_MENU",
+      "actionData": {
+        "stage": "MAIN_MENU"
+      },
+      "orchestrator": "tool-fastpath",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R098",
+      "caseType": "set_option",
+      "text": "미디엄 사이즈로 해줘",
+      "state": {
+        "stage": "DRINK_SELECTION",
+        "diningType": "DINE_IN",
+        "pageHint": {
+          "selectedCategory": "cat_drink"
+        },
+        "cartItems": [
+          {
+            "menuItemId": "menu_2003",
+            "quantity": 1
+          }
+        ]
+      },
+      "expectedActions": [
+        "ADD_MENU",
+        "CHANGE_QTY",
+        "NAVIGATE_CATEGORY",
+        "NONE"
+      ],
+      "forbiddenActions": null,
+      "expectedStage": [
+        "CART",
+        "DRINK_SELECTION",
+        "SIDE_SELECTION"
+      ],
+      "actualAction": "CHANGE_QTY",
+      "actualIntent": "ORDER_FLOW",
+      "actualStage": "DRINK_SELECTION",
+      "actionData": {
+        "stage": "DRINK_SELECTION",
+        "optionType": "SIZE"
+      },
+      "orchestrator": "langgraph",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R005",
+      "caseType": "add_menu",
+      "text": "오렌지주스 세 개 담아",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": []
+      },
+      "expectedActions": [
+        "ADD_MENU",
+        "NONE"
+      ],
+      "forbiddenActions": null,
+      "expectedStage": [
+        "CART",
+        "MAIN_MENU"
+      ],
+      "actualAction": "ADD_MENU",
+      "actualIntent": "ORDER_FLOW",
+      "actualStage": "CART",
+      "actionData": {
+        "menuItemId": "kfc_drink_005",
+        "quantity": 1,
+        "stage": "CART",
+        "parser": "v2.1",
+        "reason": "menu_add",
+        "fsm": "v2.1",
+        "fsmReason": "ok"
+      },
+      "orchestrator": "langgraph",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R045",
+      "caseType": "menu_info",
+      "text": "커넬박스버거세트 kcal 얼마야",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": []
+      },
+      "expectedActions": [
+        "NONE"
+      ],
+      "forbiddenActions": [
+        "ADD_MENU",
+        "CHECKOUT",
+        "REMOVE_MENU",
+        "SELECT_PAYMENT"
+      ],
+      "expectedStage": [
+        "ASK_DINING_TYPE",
+        "MAIN_MENU"
+      ],
+      "actualAction": "NONE",
+      "actualIntent": "MENU_INFO",
+      "actualStage": "MAIN_MENU",
+      "actionData": {
+        "stage": "MAIN_MENU"
+      },
+      "orchestrator": "tool-fastpath",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R030",
+      "caseType": "add_menu",
+      "text": "블랙라벨더블다운맥스 2개 추가해줘",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": []
+      },
+      "expectedActions": [
+        "ADD_MENU",
+        "NONE"
+      ],
+      "forbiddenActions": null,
+      "expectedStage": [
+        "CART",
+        "MAIN_MENU"
+      ],
+      "actualAction": "ADD_MENU",
+      "actualIntent": "ORDER_FLOW",
+      "actualStage": "CART",
+      "actionData": {
+        "menuItemId": "kfc_burger_012",
+        "quantity": 2,
+        "stage": "CART",
+        "parser": "v2.1",
+        "reason": "menu_add",
+        "fsm": "v2.1",
+        "fsmReason": "ok"
+      },
+      "orchestrator": "langgraph",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R088",
+      "caseType": "navigate_category",
+      "text": "단품 메뉴 보여줘",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": []
+      },
+      "expectedActions": [
+        "CONTINUE_ORDER",
+        "NAVIGATE_CATEGORY",
+        "NONE"
+      ],
+      "forbiddenActions": null,
+      "expectedStage": [
+        "MAIN_MENU"
+      ],
+      "actualAction": "NAVIGATE_CATEGORY",
+      "actualIntent": "ORDER_FLOW",
+      "actualStage": "MAIN_MENU",
+      "actionData": {
+        "categoryKey": "single",
+        "stage": "MAIN_MENU",
+        "parser": "v2.1",
+        "reason": "category_nav",
+        "fsm": "v2.1",
+        "fsmReason": "ok"
+      },
+      "orchestrator": "langgraph",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R067",
+      "caseType": "check_cart",
+      "text": "주문내역 확인해줘",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": [
+          {
+            "menuItemId": "menu_2015",
+            "quantity": 1
+          }
+        ]
+      },
+      "expectedActions": [
+        "CHECK_CART",
+        "NONE"
+      ],
+      "forbiddenActions": null,
+      "expectedStage": [
+        "CART",
+        "MAIN_MENU"
+      ],
+      "actualAction": "CHECK_CART",
+      "actualIntent": "ORDER_FLOW",
+      "actualStage": "CART",
+      "actionData": {
+        "stage": "CART"
+      },
+      "orchestrator": "langgraph",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R026",
+      "caseType": "add_menu",
+      "text": "커넬샌더스 코스 세 개 담아",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": []
+      },
+      "expectedActions": [
+        "ADD_MENU",
+        "NONE"
+      ],
+      "forbiddenActions": null,
+      "expectedStage": [
+        "CART",
+        "MAIN_MENU"
+      ],
+      "actualAction": "ADD_MENU",
+      "actualIntent": "ORDER_FLOW",
+      "actualStage": "CART",
+      "actionData": {
+        "menuItemId": "kfc_burger_021",
+        "quantity": 1,
+        "stage": "CART",
+        "parser": "v2.1",
+        "reason": "menu_add",
+        "nextStage": "SIDE_SELECTION",
+        "fsm": "v2.1",
+        "fsmReason": "ok"
+      },
+      "orchestrator": "langgraph",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R048",
+      "caseType": "menu_info",
+      "text": "치즈버거 알레르기 정보 알려줘",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": []
+      },
+      "expectedActions": [
+        "NONE"
+      ],
+      "forbiddenActions": [
+        "ADD_MENU",
+        "CHECKOUT",
+        "REMOVE_MENU",
+        "SELECT_PAYMENT"
+      ],
+      "expectedStage": [
+        "ASK_DINING_TYPE",
+        "MAIN_MENU"
+      ],
+      "actualAction": "NONE",
+      "actualIntent": "MENU_INFO",
+      "actualStage": "MAIN_MENU",
+      "actionData": {
+        "stage": "MAIN_MENU"
+      },
+      "orchestrator": "tool-fastpath",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R060",
+      "caseType": "recommend_constraint",
+      "text": "MILK 제외 메뉴 추천",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": []
+      },
+      "expectedActions": [
+        "NONE"
+      ],
+      "forbiddenActions": [
+        "ADD_MENU",
+        "CHECKOUT"
+      ],
+      "expectedStage": [
+        "MAIN_MENU"
+      ],
+      "actualAction": "NONE",
+      "actualIntent": "RECOMMENDATION",
+      "actualStage": "MAIN_MENU",
+      "actionData": {
+        "stage": "MAIN_MENU"
+      },
+      "orchestrator": "langgraph",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R099",
+      "caseType": "set_option",
+      "text": "라지 사이즈로 바꿔줘",
+      "state": {
+        "stage": "SIDE_SELECTION",
+        "diningType": "DINE_IN",
+        "pageHint": {
+          "selectedCategory": "cat_side"
+        },
+        "cartItems": [
+          {
+            "menuItemId": "kfc_set_004",
+            "quantity": 1
+          }
+        ]
+      },
+      "expectedActions": [
+        "ADD_MENU",
+        "CHANGE_QTY",
+        "NAVIGATE_CATEGORY",
+        "NONE"
+      ],
+      "forbiddenActions": null,
+      "expectedStage": [
+        "CART",
+        "DRINK_SELECTION",
+        "SIDE_SELECTION"
+      ],
+      "actualAction": "CHANGE_QTY",
+      "actualIntent": "ORDER_FLOW",
+      "actualStage": "SIDE_SELECTION",
+      "actionData": {
+        "stage": "SIDE_SELECTION",
+        "optionType": "SIZE"
+      },
+      "orchestrator": "langgraph",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R106",
+      "caseType": "set_option",
+      "text": "라지 사이즈로 바꿔줘",
+      "state": {
+        "stage": "SIDE_SELECTION",
+        "diningType": "DINE_IN",
+        "pageHint": {
+          "selectedCategory": "cat_side"
+        },
+        "cartItems": [
+          {
+            "menuItemId": "kfc_set_003",
+            "quantity": 1
+          }
+        ]
+      },
+      "expectedActions": [
+        "ADD_MENU",
+        "CHANGE_QTY",
+        "NAVIGATE_CATEGORY",
+        "NONE"
+      ],
+      "forbiddenActions": null,
+      "expectedStage": [
+        "CART",
+        "DRINK_SELECTION",
+        "SIDE_SELECTION"
+      ],
+      "actualAction": "CHANGE_QTY",
+      "actualIntent": "ORDER_FLOW",
+      "actualStage": "SIDE_SELECTION",
+      "actionData": {
+        "stage": "SIDE_SELECTION",
+        "optionType": "SIZE"
+      },
+      "orchestrator": "langgraph",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R014",
+      "caseType": "add_menu",
+      "text": "스파이시버거 세 개 담아",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": []
+      },
+      "expectedActions": [
+        "ADD_MENU",
+        "NONE"
+      ],
+      "forbiddenActions": null,
+      "expectedStage": [
+        "CART",
+        "MAIN_MENU"
+      ],
+      "actualAction": "ADD_MENU",
+      "actualIntent": "ORDER_FLOW",
+      "actualStage": "CART",
+      "actionData": {
+        "menuItemId": "menu_3011",
+        "quantity": 1,
+        "stage": "CART",
+        "parser": "v2.1",
+        "reason": "menu_add",
+        "fsm": "v2.1",
+        "fsmReason": "ok"
+      },
+      "orchestrator": "langgraph",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R017",
+      "caseType": "add_menu",
+      "text": "타워버거세트 주문할게",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": []
+      },
+      "expectedActions": [
+        "ADD_MENU",
+        "NONE"
+      ],
+      "forbiddenActions": null,
+      "expectedStage": [
+        "CART",
+        "MAIN_MENU"
+      ],
+      "actualAction": "ADD_MENU",
+      "actualIntent": "ORDER_FLOW",
+      "actualStage": "CART",
+      "actionData": {
+        "menuItemId": "kfc_burger_002",
+        "quantity": 1,
+        "stage": "CART",
+        "parser": "v2.1",
+        "reason": "menu_add",
+        "fsm": "v2.1",
+        "fsmReason": "ok"
+      },
+      "orchestrator": "langgraph",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R073",
+      "caseType": "check_cart",
+      "text": "지금 고른 메뉴 뭐야",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": [
+          {
+            "menuItemId": "menu_6004",
+            "quantity": 1
+          }
+        ]
+      },
+      "expectedActions": [
+        "CHECK_CART",
+        "NONE"
+      ],
+      "forbiddenActions": null,
+      "expectedStage": [
+        "CART",
+        "MAIN_MENU"
+      ],
+      "actualAction": "NONE",
+      "actualIntent": "MENU_INFO",
+      "actualStage": "MAIN_MENU",
+      "actionData": {
+        "stage": "MAIN_MENU"
+      },
+      "orchestrator": "tool-fastpath",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R096",
+      "caseType": "set_option",
+      "text": "사이드는 그린샐러드로 해줘",
+      "state": {
+        "stage": "SIDE_SELECTION",
+        "diningType": "DINE_IN",
+        "pageHint": {
+          "selectedCategory": "cat_side"
+        },
+        "cartItems": [
+          {
+            "menuItemId": "kfc_set_016",
+            "quantity": 1
+          }
+        ]
+      },
+      "expectedActions": [
+        "ADD_MENU",
+        "CHANGE_QTY",
+        "NAVIGATE_CATEGORY",
+        "NONE"
+      ],
+      "forbiddenActions": null,
+      "expectedStage": [
+        "CART",
+        "DRINK_SELECTION",
+        "SIDE_SELECTION"
+      ],
+      "actualAction": "NONE",
+      "actualIntent": "ORDER_FLOW",
+      "actualStage": "SIDE_SELECTION",
+      "actionData": {
+        "stage": "SIDE_SELECTION"
+      },
+      "orchestrator": "langgraph",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R089",
+      "caseType": "navigate_category",
+      "text": "세트 메뉴 보여줘",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": []
+      },
+      "expectedActions": [
+        "CONTINUE_ORDER",
+        "NAVIGATE_CATEGORY",
+        "NONE"
+      ],
+      "forbiddenActions": null,
+      "expectedStage": [
+        "MAIN_MENU"
+      ],
+      "actualAction": "NAVIGATE_CATEGORY",
+      "actualIntent": "ORDER_FLOW",
+      "actualStage": "MAIN_MENU",
+      "actionData": {
+        "categoryKey": "set",
+        "stage": "MAIN_MENU",
+        "parser": "v2.1",
+        "reason": "category_nav",
+        "fsm": "v2.1",
+        "fsmReason": "ok"
+      },
+      "orchestrator": "langgraph",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R095",
+      "caseType": "navigate_category",
+      "text": "세트 메뉴 보여줘",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": []
+      },
+      "expectedActions": [
+        "CONTINUE_ORDER",
+        "NAVIGATE_CATEGORY",
+        "NONE"
+      ],
+      "forbiddenActions": null,
+      "expectedStage": [
+        "MAIN_MENU"
+      ],
+      "actualAction": "NAVIGATE_CATEGORY",
+      "actualIntent": "ORDER_FLOW",
+      "actualStage": "MAIN_MENU",
+      "actionData": {
+        "categoryKey": "set",
+        "stage": "MAIN_MENU",
+        "parser": "v2.1",
+        "reason": "category_nav",
+        "fsm": "v2.1",
+        "fsmReason": "ok"
+      },
+      "orchestrator": "langgraph",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R043",
+      "caseType": "menu_info",
+      "text": "그릴치킨버거세트 알래르기 알려줘",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": []
+      },
+      "expectedActions": [
+        "NONE"
+      ],
+      "forbiddenActions": [
+        "ADD_MENU",
+        "CHECKOUT",
+        "REMOVE_MENU",
+        "SELECT_PAYMENT"
+      ],
+      "expectedStage": [
+        "ASK_DINING_TYPE",
+        "MAIN_MENU"
+      ],
+      "actualAction": "NONE",
+      "actualIntent": "MENU_INFO",
+      "actualStage": "MAIN_MENU",
+      "actionData": {
+        "stage": "MAIN_MENU"
+      },
+      "orchestrator": "tool-fastpath",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R027",
+      "caseType": "add_menu",
+      "text": "닭껍질튀김 세 개 담아",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": []
+      },
+      "expectedActions": [
+        "ADD_MENU",
+        "NONE"
+      ],
+      "forbiddenActions": null,
+      "expectedStage": [
+        "CART",
+        "MAIN_MENU"
+      ],
+      "actualAction": "ADD_MENU",
+      "actualIntent": "ORDER_FLOW",
+      "actualStage": "CART",
+      "actionData": {
+        "menuItemId": "kfc_side_006",
+        "quantity": 1,
+        "stage": "CART",
+        "parser": "v2.1",
+        "reason": "menu_add",
+        "fsm": "v2.1",
+        "fsmReason": "ok"
+      },
+      "orchestrator": "langgraph",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R006",
+      "caseType": "add_menu",
+      "text": "그릴치킨버거 세 개 담아",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": []
+      },
+      "expectedActions": [
+        "ADD_MENU",
+        "NONE"
+      ],
+      "forbiddenActions": null,
+      "expectedStage": [
+        "CART",
+        "MAIN_MENU"
+      ],
+      "actualAction": "ADD_MENU",
+      "actualIntent": "ORDER_FLOW",
+      "actualStage": "CART",
+      "actionData": {
+        "menuItemId": "kfc_burger_023",
+        "quantity": 1,
+        "stage": "CART",
+        "parser": "v2.1",
+        "reason": "menu_add",
+        "fsm": "v2.1",
+        "fsmReason": "ok"
+      },
+      "orchestrator": "langgraph",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R040",
+      "caseType": "menu_info",
+      "text": "에그징거버거 칼로리 알려줘",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": []
+      },
+      "expectedActions": [
+        "NONE"
+      ],
+      "forbiddenActions": [
+        "ADD_MENU",
+        "CHECKOUT",
+        "REMOVE_MENU",
+        "SELECT_PAYMENT"
+      ],
+      "expectedStage": [
+        "ASK_DINING_TYPE",
+        "MAIN_MENU"
+      ],
+      "actualAction": "NONE",
+      "actualIntent": "MENU_INFO",
+      "actualStage": "MAIN_MENU",
+      "actionData": {
+        "stage": "MAIN_MENU"
+      },
+      "orchestrator": "tool-fastpath",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R003",
+      "caseType": "add_menu",
+      "text": "그릴치킨버거세트 2개 추가해줘",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": []
+      },
+      "expectedActions": [
+        "ADD_MENU",
+        "NONE"
+      ],
+      "forbiddenActions": null,
+      "expectedStage": [
+        "CART",
+        "MAIN_MENU"
+      ],
+      "actualAction": "ADD_MENU",
+      "actualIntent": "ORDER_FLOW",
+      "actualStage": "CART",
+      "actionData": {
+        "menuItemId": "kfc_burger_023",
+        "quantity": 2,
+        "stage": "CART",
+        "parser": "v2.1",
+        "reason": "menu_add",
+        "fsm": "v2.1",
+        "fsmReason": "ok"
+      },
+      "orchestrator": "langgraph",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R039",
+      "caseType": "menu_info",
+      "text": "애플주스 kcal 얼마야",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": []
+      },
+      "expectedActions": [
+        "NONE"
+      ],
+      "forbiddenActions": [
+        "ADD_MENU",
+        "CHECKOUT",
+        "REMOVE_MENU",
+        "SELECT_PAYMENT"
+      ],
+      "expectedStage": [
+        "ASK_DINING_TYPE",
+        "MAIN_MENU"
+      ],
+      "actualAction": "NONE",
+      "actualIntent": "MENU_INFO",
+      "actualStage": "MAIN_MENU",
+      "actionData": {
+        "stage": "MAIN_MENU"
+      },
+      "orchestrator": "tool-fastpath",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R086",
+      "caseType": "navigate_category",
+      "text": "사이드 메뉴 보여줘",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": []
+      },
+      "expectedActions": [
+        "CONTINUE_ORDER",
+        "NAVIGATE_CATEGORY",
+        "NONE"
+      ],
+      "forbiddenActions": null,
+      "expectedStage": [
+        "MAIN_MENU"
+      ],
+      "actualAction": "NAVIGATE_CATEGORY",
+      "actualIntent": "ORDER_FLOW",
+      "actualStage": "MAIN_MENU",
+      "actionData": {
+        "categoryKey": "side",
+        "stage": "MAIN_MENU",
+        "parser": "v2.1",
+        "reason": "category_nav",
+        "fsm": "v2.1",
+        "fsmReason": "ok"
+      },
+      "orchestrator": "langgraph",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R064",
+      "caseType": "recommend_constraint",
+      "text": "굴 없는 메뉴 뭐 있어",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": []
+      },
+      "expectedActions": [
+        "NONE"
+      ],
+      "forbiddenActions": [
+        "ADD_MENU",
+        "CHECKOUT"
+      ],
+      "expectedStage": [
+        "MAIN_MENU"
+      ],
+      "actualAction": "NONE",
+      "actualIntent": "MENU_INFO",
+      "actualStage": "MAIN_MENU",
+      "actionData": {
+        "stage": "MAIN_MENU"
+      },
+      "orchestrator": "tool-fastpath",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R094",
+      "caseType": "navigate_category",
+      "text": "음료 카테고리 보여줘",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": []
+      },
+      "expectedActions": [
+        "CONTINUE_ORDER",
+        "NAVIGATE_CATEGORY",
+        "NONE"
+      ],
+      "forbiddenActions": null,
+      "expectedStage": [
+        "MAIN_MENU"
+      ],
+      "actualAction": "NAVIGATE_CATEGORY",
+      "actualIntent": "ORDER_FLOW",
+      "actualStage": "MAIN_MENU",
+      "actionData": {
+        "categoryKey": "drink",
+        "stage": "MAIN_MENU",
+        "parser": "v2.1",
+        "reason": "category_nav",
+        "fsm": "v2.1",
+        "fsmReason": "ok"
+      },
+      "orchestrator": "langgraph",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R057",
+      "caseType": "recommend_constraint",
+      "text": "우유 없는 메뉴 뭐 있어",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": []
+      },
+      "expectedActions": [
+        "NONE"
+      ],
+      "forbiddenActions": [
+        "ADD_MENU",
+        "CHECKOUT"
+      ],
+      "expectedStage": [
+        "MAIN_MENU"
+      ],
+      "actualAction": "NONE",
+      "actualIntent": "MENU_INFO",
+      "actualStage": "MAIN_MENU",
+      "actionData": {
+        "stage": "MAIN_MENU"
+      },
+      "orchestrator": "tool-fastpath",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R061",
+      "caseType": "recommend_constraint",
+      "text": "우유 안 들어간 메뉴 추천해줘",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": []
+      },
+      "expectedActions": [
+        "NONE"
+      ],
+      "forbiddenActions": [
+        "ADD_MENU",
+        "CHECKOUT"
+      ],
+      "expectedStage": [
+        "MAIN_MENU"
+      ],
+      "actualAction": "NONE",
+      "actualIntent": "RECOMMENDATION",
+      "actualStage": "MAIN_MENU",
+      "actionData": {
+        "stage": "MAIN_MENU"
+      },
+      "orchestrator": "langgraph",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R016",
+      "caseType": "add_menu",
+      "text": "징거버거세트 하나 넣어줘",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": []
+      },
+      "expectedActions": [
+        "ADD_MENU",
+        "NONE"
+      ],
+      "forbiddenActions": null,
+      "expectedStage": [
+        "CART",
+        "MAIN_MENU"
+      ],
+      "actualAction": "ADD_MENU",
+      "actualIntent": "ORDER_FLOW",
+      "actualStage": "CART",
+      "actionData": {
+        "menuItemId": "kfc_burger_001",
+        "quantity": 1,
+        "stage": "CART",
+        "parser": "v2.1",
+        "reason": "menu_add",
+        "fsm": "v2.1",
+        "fsmReason": "ok"
+      },
+      "orchestrator": "langgraph",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R102",
+      "caseType": "set_option",
+      "text": "미디엄 사이즈로 해줘",
+      "state": {
+        "stage": "SIDE_SELECTION",
+        "diningType": "DINE_IN",
+        "pageHint": {
+          "selectedCategory": "cat_side"
+        },
+        "cartItems": [
+          {
+            "menuItemId": "kfc_set_017",
+            "quantity": 1
+          }
+        ]
+      },
+      "expectedActions": [
+        "ADD_MENU",
+        "CHANGE_QTY",
+        "NAVIGATE_CATEGORY",
+        "NONE"
+      ],
+      "forbiddenActions": null,
+      "expectedStage": [
+        "CART",
+        "DRINK_SELECTION",
+        "SIDE_SELECTION"
+      ],
+      "actualAction": "CHANGE_QTY",
+      "actualIntent": "ORDER_FLOW",
+      "actualStage": "SIDE_SELECTION",
+      "actionData": {
+        "stage": "SIDE_SELECTION",
+        "optionType": "SIZE"
+      },
+      "orchestrator": "langgraph",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R108",
+      "caseType": "set_option",
+      "text": "사이드는 케이준후라이(M)로 해줘",
+      "state": {
+        "stage": "DRINK_SELECTION",
+        "diningType": "DINE_IN",
+        "pageHint": {
+          "selectedCategory": "cat_drink"
+        },
+        "cartItems": [
+          {
+            "menuItemId": "kfc_set_011",
+            "quantity": 1
+          }
+        ]
+      },
+      "expectedActions": [
+        "ADD_MENU",
+        "CHANGE_QTY",
+        "NAVIGATE_CATEGORY",
+        "NONE"
+      ],
+      "forbiddenActions": null,
+      "expectedStage": [
+        "CART",
+        "DRINK_SELECTION",
+        "SIDE_SELECTION"
+      ],
+      "actualAction": "NONE",
+      "actualIntent": "ORDER_FLOW",
+      "actualStage": "SIDE_SELECTION",
+      "actionData": {
+        "stage": "SIDE_SELECTION"
+      },
+      "orchestrator": "langgraph",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R074",
+      "caseType": "check_cart",
+      "text": "지금 고른 메뉴 뭐야",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": [
+          {
+            "menuItemId": "kfc_burger_029",
+            "quantity": 1
+          }
+        ]
+      },
+      "expectedActions": [
+        "CHECK_CART",
+        "NONE"
+      ],
+      "forbiddenActions": null,
+      "expectedStage": [
+        "CART",
+        "MAIN_MENU"
+      ],
+      "actualAction": "NONE",
+      "actualIntent": "MENU_INFO",
+      "actualStage": "MAIN_MENU",
+      "actionData": {
+        "stage": "MAIN_MENU"
+      },
+      "orchestrator": "tool-fastpath",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R009",
+      "caseType": "add_menu",
+      "text": "갈릭스노잉버거세트 2개 추가해줘",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": []
+      },
+      "expectedActions": [
+        "ADD_MENU",
+        "NONE"
+      ],
+      "forbiddenActions": null,
+      "expectedStage": [
+        "CART",
+        "MAIN_MENU"
+      ],
+      "actualAction": "ADD_MENU",
+      "actualIntent": "ORDER_FLOW",
+      "actualStage": "CART",
+      "actionData": {
+        "menuItemId": "kfc_burger_016",
+        "quantity": 2,
+        "stage": "CART",
+        "parser": "v2.1",
+        "reason": "menu_add",
+        "fsm": "v2.1",
+        "fsmReason": "ok"
+      },
+      "orchestrator": "langgraph",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R024",
+      "caseType": "add_menu",
+      "text": "버팔로치킨버거 세 개 담아",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": []
+      },
+      "expectedActions": [
+        "ADD_MENU",
+        "NONE"
+      ],
+      "forbiddenActions": null,
+      "expectedStage": [
+        "CART",
+        "MAIN_MENU"
+      ],
+      "actualAction": "ADD_MENU",
+      "actualIntent": "ORDER_FLOW",
+      "actualStage": "CART",
+      "actionData": {
+        "menuItemId": "menu_3007",
+        "quantity": 1,
+        "stage": "CART",
+        "parser": "v2.1",
+        "reason": "menu_add",
+        "fsm": "v2.1",
+        "fsmReason": "ok"
+      },
+      "orchestrator": "langgraph",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R011",
+      "caseType": "add_menu",
+      "text": "블랙라벨폴인치즈버거 세 개 담아",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": []
+      },
+      "expectedActions": [
+        "ADD_MENU",
+        "NONE"
+      ],
+      "forbiddenActions": null,
+      "expectedStage": [
+        "CART",
+        "MAIN_MENU"
+      ],
+      "actualAction": "ADD_MENU",
+      "actualIntent": "ORDER_FLOW",
+      "actualStage": "CART",
+      "actionData": {
+        "menuItemId": "kfc_burger_007",
+        "quantity": 1,
+        "stage": "CART",
+        "parser": "v2.1",
+        "reason": "menu_add",
+        "fsm": "v2.1",
+        "fsmReason": "ok"
+      },
+      "orchestrator": "langgraph",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R066",
+      "caseType": "check_cart",
+      "text": "장바구니 보여줘",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": [
+          {
+            "menuItemId": "menu_3005",
+            "quantity": 1
+          }
+        ]
+      },
+      "expectedActions": [
+        "CHECK_CART",
+        "NONE"
+      ],
+      "forbiddenActions": null,
+      "expectedStage": [
+        "CART",
+        "MAIN_MENU"
+      ],
+      "actualAction": "CHECK_CART",
+      "actualIntent": "ORDER_FLOW",
+      "actualStage": "CART",
+      "actionData": {
+        "stage": "CART",
+        "parser": "v2.1",
+        "reason": "cart_query",
+        "fsm": "v2.1",
+        "fsmReason": "ok"
+      },
+      "orchestrator": "langgraph",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R079",
+      "caseType": "payment",
+      "text": "결제할게",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": [
+          {
+            "menuItemId": "menu_5019",
+            "quantity": 1
+          }
+        ],
+        "pageHint": {
+          "paymentStep": "select"
+        }
+      },
+      "expectedActions": [
+        "CHECKOUT",
+        "NONE"
+      ],
+      "forbiddenActions": null,
+      "expectedStage": [
+        "MAIN_MENU",
+        "ORDER_REVIEW",
+        "PAYMENT"
+      ],
+      "actualAction": "CHECKOUT",
+      "actualIntent": "ORDER_FLOW",
+      "actualStage": "ORDER_REVIEW",
+      "actionData": {
+        "stage": "ORDER_REVIEW",
+        "parser": "v2.1",
+        "reason": "checkout",
+        "fsm": "v2.1",
+        "fsmReason": "ok"
+      },
+      "orchestrator": "langgraph",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R021",
+      "caseType": "add_menu",
+      "text": "트위스터 주문할게",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": []
+      },
+      "expectedActions": [
+        "ADD_MENU",
+        "NONE"
+      ],
+      "forbiddenActions": null,
+      "expectedStage": [
+        "CART",
+        "MAIN_MENU"
+      ],
+      "actualAction": "ADD_MENU",
+      "actualIntent": "ORDER_FLOW",
+      "actualStage": "CART",
+      "actionData": {
+        "menuItemId": "kfc_burger_025",
+        "quantity": 1,
+        "stage": "CART",
+        "parser": "v2.1",
+        "reason": "menu_add",
+        "fsm": "v2.1",
+        "fsmReason": "ok"
+      },
+      "orchestrator": "langgraph",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R068",
+      "caseType": "check_cart",
+      "text": "주문내역 확인해줘",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": [
+          {
+            "menuItemId": "menu_5011",
+            "quantity": 1
+          }
+        ]
+      },
+      "expectedActions": [
+        "CHECK_CART",
+        "NONE"
+      ],
+      "forbiddenActions": null,
+      "expectedStage": [
+        "CART",
+        "MAIN_MENU"
+      ],
+      "actualAction": "CHECK_CART",
+      "actualIntent": "ORDER_FLOW",
+      "actualStage": "CART",
+      "actionData": {
+        "stage": "CART"
+      },
+      "orchestrator": "langgraph",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R065",
+      "caseType": "recommend_constraint",
+      "text": "굴 없는 메뉴 뭐 있어",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": []
+      },
+      "expectedActions": [
+        "NONE"
+      ],
+      "forbiddenActions": [
+        "ADD_MENU",
+        "CHECKOUT"
+      ],
+      "expectedStage": [
+        "MAIN_MENU"
+      ],
+      "actualAction": "NONE",
+      "actualIntent": "MENU_INFO",
+      "actualStage": "MAIN_MENU",
+      "actionData": {
+        "stage": "MAIN_MENU"
+      },
+      "orchestrator": "tool-fastpath",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R104",
+      "caseType": "set_option",
+      "text": "라지 사이즈로 바꿔줘",
+      "state": {
+        "stage": "DRINK_SELECTION",
+        "diningType": "DINE_IN",
+        "pageHint": {
+          "selectedCategory": "cat_drink"
+        },
+        "cartItems": [
+          {
+            "menuItemId": "kfc_set_012",
+            "quantity": 1
+          }
+        ]
+      },
+      "expectedActions": [
+        "ADD_MENU",
+        "CHANGE_QTY",
+        "NAVIGATE_CATEGORY",
+        "NONE"
+      ],
+      "forbiddenActions": null,
+      "expectedStage": [
+        "CART",
+        "DRINK_SELECTION",
+        "SIDE_SELECTION"
+      ],
+      "actualAction": "CHANGE_QTY",
+      "actualIntent": "ORDER_FLOW",
+      "actualStage": "DRINK_SELECTION",
+      "actionData": {
+        "stage": "DRINK_SELECTION",
+        "optionType": "SIZE"
+      },
+      "orchestrator": "langgraph",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R083",
+      "caseType": "payment",
+      "text": "결제할게",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": [
+          {
+            "menuItemId": "menu_5012",
+            "quantity": 1
+          }
+        ]
+      },
+      "expectedActions": [
+        "CHECKOUT",
+        "NONE"
+      ],
+      "forbiddenActions": null,
+      "expectedStage": [
+        "MAIN_MENU",
+        "ORDER_REVIEW",
+        "PAYMENT"
+      ],
+      "actualAction": "CHECKOUT",
+      "actualIntent": "ORDER_FLOW",
+      "actualStage": "ORDER_REVIEW",
+      "actionData": {
+        "stage": "ORDER_REVIEW",
+        "parser": "v2.1",
+        "reason": "checkout",
+        "fsm": "v2.1",
+        "fsmReason": "ok"
+      },
+      "orchestrator": "langgraph",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R007",
+      "caseType": "add_menu",
+      "text": "올치킨버거더블업 하나 담아줘",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": []
+      },
+      "expectedActions": [
+        "ADD_MENU",
+        "NONE"
+      ],
+      "forbiddenActions": null,
+      "expectedStage": [
+        "CART",
+        "MAIN_MENU"
+      ],
+      "actualAction": "ADD_MENU",
+      "actualIntent": "ORDER_FLOW",
+      "actualStage": "CART",
+      "actionData": {
+        "menuItemId": "menu_3005",
+        "quantity": 1,
+        "stage": "CART",
+        "parser": "v2.1",
+        "reason": "menu_add",
+        "fsm": "v2.1",
+        "fsmReason": "ok"
+      },
+      "orchestrator": "langgraph",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R081",
+      "caseType": "payment",
+      "text": "카드 결제할게",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": [
+          {
+            "menuItemId": "kfc_drink_010",
+            "quantity": 1
+          }
+        ]
+      },
+      "expectedActions": [
+        "CHECKOUT",
+        "NONE",
+        "SELECT_PAYMENT"
+      ],
+      "forbiddenActions": null,
+      "expectedStage": [
+        "MAIN_MENU",
+        "ORDER_REVIEW",
+        "PAYMENT"
+      ],
+      "actualAction": "SELECT_PAYMENT",
+      "actualIntent": "ORDER_FLOW",
+      "actualStage": "PAYMENT",
+      "actionData": {
+        "method": "CARD",
+        "stage": "PAYMENT",
+        "parser": "v2.1",
+        "reason": "pay_card",
+        "fsm": "v2.1",
+        "fsmReason": "ok"
+      },
+      "orchestrator": "langgraph",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R041",
+      "caseType": "menu_info",
+      "text": "콜라 L 알래르기 알려줘",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": []
+      },
+      "expectedActions": [
+        "NONE"
+      ],
+      "forbiddenActions": [
+        "ADD_MENU",
+        "CHECKOUT",
+        "REMOVE_MENU",
+        "SELECT_PAYMENT"
+      ],
+      "expectedStage": [
+        "ASK_DINING_TYPE",
+        "MAIN_MENU"
+      ],
+      "actualAction": "NONE",
+      "actualIntent": "MENU_INFO",
+      "actualStage": "MAIN_MENU",
+      "actionData": {
+        "stage": "MAIN_MENU"
+      },
+      "orchestrator": "tool-fastpath",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R084",
+      "caseType": "payment",
+      "text": "포인트로 결제할게",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": [
+          {
+            "menuItemId": "menu_4004",
+            "quantity": 1
+          }
+        ]
+      },
+      "expectedActions": [
+        "CHECKOUT",
+        "NONE",
+        "SELECT_PAYMENT"
+      ],
+      "forbiddenActions": null,
+      "expectedStage": [
+        "MAIN_MENU",
+        "ORDER_REVIEW",
+        "PAYMENT"
+      ],
+      "actualAction": "SELECT_PAYMENT",
+      "actualIntent": "ORDER_FLOW",
+      "actualStage": "PAYMENT",
+      "actionData": {
+        "method": "POINT",
+        "stage": "PAYMENT",
+        "parser": "v2.1",
+        "reason": "pay_point",
+        "fsm": "v2.1",
+        "fsmReason": "ok"
+      },
+      "orchestrator": "langgraph",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R070",
+      "caseType": "check_cart",
+      "text": "장바구니 보여줘",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": [
+          {
+            "menuItemId": "menu_4020",
+            "quantity": 1
+          }
+        ]
+      },
+      "expectedActions": [
+        "CHECK_CART",
+        "NONE"
+      ],
+      "forbiddenActions": null,
+      "expectedStage": [
+        "CART",
+        "MAIN_MENU"
+      ],
+      "actualAction": "CHECK_CART",
+      "actualIntent": "ORDER_FLOW",
+      "actualStage": "CART",
+      "actionData": {
+        "stage": "CART",
+        "parser": "v2.1",
+        "reason": "cart_query",
+        "fsm": "v2.1",
+        "fsmReason": "ok"
+      },
+      "orchestrator": "langgraph",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R075",
+      "caseType": "check_cart",
+      "text": "장바구니 뭐 담겼어",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": [
+          {
+            "menuItemId": "menu_3008",
+            "quantity": 1
+          }
+        ]
+      },
+      "expectedActions": [
+        "CHECK_CART",
+        "NONE"
+      ],
+      "forbiddenActions": null,
+      "expectedStage": [
+        "CART",
+        "MAIN_MENU"
+      ],
+      "actualAction": "CHECK_CART",
+      "actualIntent": "ORDER_FLOW",
+      "actualStage": "CART",
+      "actionData": {
+        "stage": "CART",
+        "parser": "v2.1",
+        "reason": "cart_query",
+        "fsm": "v2.1",
+        "fsmReason": "ok"
+      },
+      "orchestrator": "langgraph",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R101",
+      "caseType": "set_option",
+      "text": "음료는 환타오렌지(M)로 할게",
+      "state": {
+        "stage": "SIDE_SELECTION",
+        "diningType": "DINE_IN",
+        "pageHint": {
+          "selectedCategory": "cat_side"
+        },
+        "cartItems": [
+          {
+            "menuItemId": "kfc_set_002",
+            "quantity": 1
+          }
+        ]
+      },
+      "expectedActions": [
+        "ADD_MENU",
+        "CHANGE_QTY",
+        "NAVIGATE_CATEGORY",
+        "NONE"
+      ],
+      "forbiddenActions": null,
+      "expectedStage": [
+        "CART",
+        "DRINK_SELECTION",
+        "SIDE_SELECTION"
+      ],
+      "actualAction": "NONE",
+      "actualIntent": "ORDER_FLOW",
+      "actualStage": "DRINK_SELECTION",
+      "actionData": {
+        "stage": "DRINK_SELECTION"
+      },
+      "orchestrator": "langgraph",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R103",
+      "caseType": "set_option",
+      "text": "라지 사이즈로 바꿔줘",
+      "state": {
+        "stage": "SIDE_SELECTION",
+        "diningType": "DINE_IN",
+        "pageHint": {
+          "selectedCategory": "cat_side"
+        },
+        "cartItems": [
+          {
+            "menuItemId": "menu_2016",
+            "quantity": 1
+          }
+        ]
+      },
+      "expectedActions": [
+        "ADD_MENU",
+        "CHANGE_QTY",
+        "NAVIGATE_CATEGORY",
+        "NONE"
+      ],
+      "forbiddenActions": null,
+      "expectedStage": [
+        "CART",
+        "DRINK_SELECTION",
+        "SIDE_SELECTION"
+      ],
+      "actualAction": "CHANGE_QTY",
+      "actualIntent": "ORDER_FLOW",
+      "actualStage": "SIDE_SELECTION",
+      "actionData": {
+        "stage": "SIDE_SELECTION",
+        "optionType": "SIZE"
+      },
+      "orchestrator": "langgraph",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R038",
+      "caseType": "menu_info",
+      "text": "오리지널타워버거세트 kcal 얼마야",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": []
+      },
+      "expectedActions": [
+        "NONE"
+      ],
+      "forbiddenActions": [
+        "ADD_MENU",
+        "CHECKOUT",
+        "REMOVE_MENU",
+        "SELECT_PAYMENT"
+      ],
+      "expectedStage": [
+        "ASK_DINING_TYPE",
+        "MAIN_MENU"
+      ],
+      "actualAction": "NONE",
+      "actualIntent": "MENU_INFO",
+      "actualStage": "MAIN_MENU",
+      "actionData": {
+        "stage": "MAIN_MENU"
+      },
+      "orchestrator": "tool-fastpath",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R025",
+      "caseType": "add_menu",
+      "text": "제로콜라(M) 하나 넣어줘",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": []
+      },
+      "expectedActions": [
+        "ADD_MENU",
+        "NONE"
+      ],
+      "forbiddenActions": null,
+      "expectedStage": [
+        "CART",
+        "MAIN_MENU"
+      ],
+      "actualAction": "ADD_MENU",
+      "actualIntent": "ORDER_FLOW",
+      "actualStage": "CART",
+      "actionData": {
+        "menuItemId": "kfc_drink_001",
+        "quantity": 1,
+        "stage": "CART",
+        "parser": "v2.1",
+        "reason": "menu_add",
+        "fsm": "v2.1",
+        "fsmReason": "ok"
+      },
+      "orchestrator": "langgraph",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R020",
+      "caseType": "add_menu",
+      "text": "직화구이닭다리 하나 넣어줘",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": []
+      },
+      "expectedActions": [
+        "ADD_MENU",
+        "NONE"
+      ],
+      "forbiddenActions": null,
+      "expectedStage": [
+        "CART",
+        "MAIN_MENU"
+      ],
+      "actualAction": "ADD_MENU",
+      "actualIntent": "ORDER_FLOW",
+      "actualStage": "CART",
+      "actionData": {
+        "menuItemId": "kfc_burger_024",
+        "quantity": 1,
+        "stage": "CART",
+        "parser": "v2.1",
+        "reason": "menu_add",
+        "fsm": "v2.1",
+        "fsmReason": "ok"
+      },
+      "orchestrator": "langgraph",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R105",
+      "caseType": "set_option",
+      "text": "음료는 아이스아메리카노로 할게",
+      "state": {
+        "stage": "DRINK_SELECTION",
+        "diningType": "DINE_IN",
+        "pageHint": {
+          "selectedCategory": "cat_drink"
+        },
+        "cartItems": [
+          {
+            "menuItemId": "kfc_set_027",
+            "quantity": 1
+          }
+        ]
+      },
+      "expectedActions": [
+        "ADD_MENU",
+        "CHANGE_QTY",
+        "NAVIGATE_CATEGORY",
+        "NONE"
+      ],
+      "forbiddenActions": null,
+      "expectedStage": [
+        "CART",
+        "DRINK_SELECTION",
+        "SIDE_SELECTION"
+      ],
+      "actualAction": "NONE",
+      "actualIntent": "ORDER_FLOW",
+      "actualStage": "DRINK_SELECTION",
+      "actionData": {
+        "stage": "DRINK_SELECTION"
+      },
+      "orchestrator": "langgraph",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R085",
+      "caseType": "payment",
+      "text": "결제할게",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": [
+          {
+            "menuItemId": "kfc_burger_029",
+            "quantity": 1
+          }
+        ],
+        "pageHint": {
+          "paymentStep": "select"
+        }
+      },
+      "expectedActions": [
+        "CHECKOUT",
+        "NONE"
+      ],
+      "forbiddenActions": null,
+      "expectedStage": [
+        "MAIN_MENU",
+        "ORDER_REVIEW",
+        "PAYMENT"
+      ],
+      "actualAction": "CHECKOUT",
+      "actualIntent": "ORDER_FLOW",
+      "actualStage": "ORDER_REVIEW",
+      "actionData": {
+        "stage": "ORDER_REVIEW",
+        "parser": "v2.1",
+        "reason": "checkout",
+        "fsm": "v2.1",
+        "fsmReason": "ok"
+      },
+      "orchestrator": "langgraph",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R072",
+      "caseType": "check_cart",
+      "text": "지금 고른 메뉴 뭐야",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": [
+          {
+            "menuItemId": "menu_6014",
+            "quantity": 1
+          }
+        ]
+      },
+      "expectedActions": [
+        "CHECK_CART",
+        "NONE"
+      ],
+      "forbiddenActions": null,
+      "expectedStage": [
+        "CART",
+        "MAIN_MENU"
+      ],
+      "actualAction": "NONE",
+      "actualIntent": "MENU_INFO",
+      "actualStage": "MAIN_MENU",
+      "actionData": {
+        "stage": "MAIN_MENU"
+      },
+      "orchestrator": "tool-fastpath",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R090",
+      "caseType": "navigate_category",
+      "text": "단품 메뉴 보여줘",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": []
+      },
+      "expectedActions": [
+        "CONTINUE_ORDER",
+        "NAVIGATE_CATEGORY",
+        "NONE"
+      ],
+      "forbiddenActions": null,
+      "expectedStage": [
+        "MAIN_MENU"
+      ],
+      "actualAction": "NAVIGATE_CATEGORY",
+      "actualIntent": "ORDER_FLOW",
+      "actualStage": "MAIN_MENU",
+      "actionData": {
+        "categoryKey": "single",
+        "stage": "MAIN_MENU",
+        "parser": "v2.1",
+        "reason": "category_nav",
+        "fsm": "v2.1",
+        "fsmReason": "ok"
+      },
+      "orchestrator": "langgraph",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R055",
+      "caseType": "recommend_constraint",
+      "text": "WHEAT 안 들어간 메뉴 추천해줘",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": []
+      },
+      "expectedActions": [
+        "NONE"
+      ],
+      "forbiddenActions": [
+        "ADD_MENU",
+        "CHECKOUT"
+      ],
+      "expectedStage": [
+        "MAIN_MENU"
+      ],
+      "actualAction": "NONE",
+      "actualIntent": "RECOMMENDATION",
+      "actualStage": "MAIN_MENU",
+      "actionData": {
+        "stage": "MAIN_MENU"
+      },
+      "orchestrator": "langgraph",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R037",
+      "caseType": "menu_info",
+      "text": "커넬데리야끼버거세트 kcal 얼마야",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": []
+      },
+      "expectedActions": [
+        "NONE"
+      ],
+      "forbiddenActions": [
+        "ADD_MENU",
+        "CHECKOUT",
+        "REMOVE_MENU",
+        "SELECT_PAYMENT"
+      ],
+      "expectedStage": [
+        "ASK_DINING_TYPE",
+        "MAIN_MENU"
+      ],
+      "actualAction": "NONE",
+      "actualIntent": "MENU_INFO",
+      "actualStage": "MAIN_MENU",
+      "actionData": {
+        "stage": "MAIN_MENU"
+      },
+      "orchestrator": "tool-fastpath",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R059",
+      "caseType": "recommend_constraint",
+      "text": "MILK 없는 메뉴 뭐 있어",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": []
+      },
+      "expectedActions": [
+        "NONE"
+      ],
+      "forbiddenActions": [
+        "ADD_MENU",
+        "CHECKOUT"
+      ],
+      "expectedStage": [
+        "MAIN_MENU"
+      ],
+      "actualAction": "NONE",
+      "actualIntent": "MENU_INFO",
+      "actualStage": "MAIN_MENU",
+      "actionData": {
+        "stage": "MAIN_MENU"
+      },
+      "orchestrator": "tool-fastpath",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R034",
+      "caseType": "menu_info",
+      "text": "트리플치즈버거 kcal 얼마야",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": []
+      },
+      "expectedActions": [
+        "NONE"
+      ],
+      "forbiddenActions": [
+        "ADD_MENU",
+        "CHECKOUT",
+        "REMOVE_MENU",
+        "SELECT_PAYMENT"
+      ],
+      "expectedStage": [
+        "ASK_DINING_TYPE",
+        "MAIN_MENU"
+      ],
+      "actualAction": "NONE",
+      "actualIntent": "MENU_INFO",
+      "actualStage": "MAIN_MENU",
+      "actionData": {
+        "stage": "MAIN_MENU"
+      },
+      "orchestrator": "tool-fastpath",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R050",
+      "caseType": "menu_info",
+      "text": "카페라떼 성분 뭐야",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": []
+      },
+      "expectedActions": [
+        "NONE"
+      ],
+      "forbiddenActions": [
+        "ADD_MENU",
+        "CHECKOUT",
+        "REMOVE_MENU",
+        "SELECT_PAYMENT"
+      ],
+      "expectedStage": [
+        "ASK_DINING_TYPE",
+        "MAIN_MENU"
+      ],
+      "actualAction": "NONE",
+      "actualIntent": "MENU_INFO",
+      "actualStage": "MAIN_MENU",
+      "actionData": {
+        "stage": "MAIN_MENU"
+      },
+      "orchestrator": "tool-fastpath",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R001",
+      "caseType": "add_menu",
+      "text": "제로콜라 R 하나 담아줘",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": []
+      },
+      "expectedActions": [
+        "ADD_MENU",
+        "NONE"
+      ],
+      "forbiddenActions": null,
+      "expectedStage": [
+        "CART",
+        "MAIN_MENU"
+      ],
+      "actualAction": "ADD_MENU",
+      "actualIntent": "ORDER_FLOW",
+      "actualStage": "CART",
+      "actionData": {
+        "menuItemId": "menu_6001",
+        "quantity": 1,
+        "stage": "CART",
+        "parser": "v2.1",
+        "reason": "menu_add",
+        "fsm": "v2.1",
+        "fsmReason": "ok"
+      },
+      "orchestrator": "langgraph",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R049",
+      "caseType": "menu_info",
+      "text": "에그징거버거세트 알레르기 정보 알려줘",
+      "state": {
+        "stage": "MAIN_MENU",
+        "diningType": "DINE_IN",
+        "cartItems": []
+      },
+      "expectedActions": [
+        "NONE"
+      ],
+      "forbiddenActions": [
+        "ADD_MENU",
+        "CHECKOUT",
+        "REMOVE_MENU",
+        "SELECT_PAYMENT"
+      ],
+      "expectedStage": [
+        "ASK_DINING_TYPE",
+        "MAIN_MENU"
+      ],
+      "actualAction": "NONE",
+      "actualIntent": "MENU_INFO",
+      "actualStage": "MAIN_MENU",
+      "actionData": {
+        "stage": "MAIN_MENU"
+      },
+      "orchestrator": "tool-fastpath",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    },
+    {
+      "caseId": "R107",
+      "caseType": "set_option",
+      "text": "라지 사이즈로 바꿔줘",
+      "state": {
+        "stage": "SIDE_SELECTION",
+        "diningType": "DINE_IN",
+        "pageHint": {
+          "selectedCategory": "cat_side"
+        },
+        "cartItems": [
+          {
+            "menuItemId": "kfc_set_012",
+            "quantity": 1
+          }
+        ]
+      },
+      "expectedActions": [
+        "ADD_MENU",
+        "CHANGE_QTY",
+        "NAVIGATE_CATEGORY",
+        "NONE"
+      ],
+      "forbiddenActions": null,
+      "expectedStage": [
+        "CART",
+        "DRINK_SELECTION",
+        "SIDE_SELECTION"
+      ],
+      "actualAction": "CHANGE_QTY",
+      "actualIntent": "ORDER_FLOW",
+      "actualStage": "SIDE_SELECTION",
+      "actionData": {
+        "stage": "SIDE_SELECTION",
+        "optionType": "SIZE"
+      },
+      "orchestrator": "langgraph",
+      "looseOk": true,
+      "looseReason": "",
+      "strictOk": true,
+      "strictReasons": [],
+      "error": ""
+    }
+  ]
+}
