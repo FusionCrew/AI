@@ -47,6 +47,8 @@ logs/
 # Data and Models
 data/
 models/
+!models/
+!models/emotion_resnet_best.pth
 
 # Modules to Ignore (User Request)
 signLanguage/
@@ -56,3 +58,4 @@ hesitationLearning/*
 !hesitationLearning/pose/
 !hesitationLearning/__init__.py
 !hesitationLearning/inference.py
+!hesitationLearning/emotion_extractor.py
