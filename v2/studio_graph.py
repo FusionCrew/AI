@@ -124,18 +124,7 @@ def policy_node(graph_state: StudioState) -> Dict[str, Any]:
     if orch._is_hesitation_signal(text, state):
         return {
             "done": True,
-            "result": orch._decorate_parallel_channels(
-                {
-                    "speech": "도움이 필요하시면 말씀해 주세요. 주문을 단계별로 도와드릴게요.",
-                    "action": "NONE",
-                    "actionData": {"stage": "PROACTIVE_HELP", "proactiveHelp": True},
-                    "intent": "PROACTIVE_HELP",
-                    "stage": "PROACTIVE_HELP",
-                },
-                emotion="supportive",
-                expression="soft_smile",
-                motion="offer_help",
-            ),
+            "result": orch._build_hesitation_proactive_response(state, menu_items),
         }
 
     if not dining_type:

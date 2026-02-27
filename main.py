@@ -565,6 +565,7 @@ class HesitationResponse(BaseModel):
     status: Optional[str] = None
     is_hesitating: Optional[bool] = None
     pose_features: Optional[Dict[str, Any]] = None
+    face_points: Optional[List[Dict[str, float]]] = None
     pose_points: Optional[List[Dict[str, float]]] = None
     pose_connections: Optional[List[List[int]]] = None
     probabilities: Optional[List[float]] = None
@@ -1426,6 +1427,7 @@ async def detect_hesitation_from_base64(request: Base64ImageRequest):
                 status="NORMAL",
                 is_hesitating=False,
                 pose_features={},
+                face_points=[],
                 pose_points=[],
                 pose_connections=[],
                 error=str(result.get("error")),
@@ -1496,6 +1498,5 @@ async def translate_sign_language(video: UploadFile = File(...)):
         # ?꾩떆 ?뚯씪 ??젣
         if os.path.exists(tmp_path):
             os.remove(tmp_path)
-
 
 

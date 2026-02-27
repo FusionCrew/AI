@@ -26,6 +26,7 @@ from v2_1.intent_parser import ParsedIntent, parse_state_intent
 from v2_1.fsm import evaluate_fsm_gate
 
 logger = logging.getLogger(__name__)
+HESITATION_PROACTIVE_DELAY_MS = 2000
 
 AllowedAction = {
     "NONE",
@@ -128,6 +129,17 @@ class V2LangChainOrchestrator:
         messages = getattr(request, "messages", []) or []
         latest_user = self._latest_user_text(messages)
         mark("prepare", {"sessionId": session_id, "hasUserText": bool(latest_user)})
+        state = getattr(getattr(request, "context", None), "state", None) or {}
+        menu_items = self._extract_menu_catalog_from_state(state)
+        if not latest_user and self._is_hesitation_signal("", state):
+            mark("proactive_hesitation_no_user")
+            return {
+                "result": self._normalize_output(
+                    self._build_hesitation_proactive_response(state, menu_items),
+                    "stage-policy",
+                ),
+                "trace": trace,
+            }
         if not latest_user:
             return {
                 "result": self._normalize_output(
@@ -137,8 +149,6 @@ class V2LangChainOrchestrator:
                 "trace": trace,
             }
 
-        state = getattr(getattr(request, "context", None), "state", None) or {}
-        menu_items = self._extract_menu_catalog_from_state(state)
         mark("state_catalog", {"count": len(menu_items)})
         if not menu_items:
             try:
@@ -896,18 +906,7 @@ class V2LangChainOrchestrator:
         quantity = self._extract_quantity(text)
 
         if self._is_hesitation_signal(text, state):
-            return self._decorate_parallel_channels(
-                {
-                    "speech": "?꾩????꾩슂?섏떆硫?留먯???二쇱꽭?? 二쇰Ц???④퀎蹂꾨줈 ?꾩??쒕┫寃뚯슂.",
-                    "action": "NONE",
-                    "actionData": {"stage": "PROACTIVE_HELP", "proactiveHelp": True},
-                    "intent": "PROACTIVE_HELP",
-                    "stage": "PROACTIVE_HELP",
-                },
-                emotion="supportive",
-                expression="soft_smile",
-                motion="offer_help",
-            )
+            return self._build_hesitation_proactive_response(state, menu_items)
 
         compact = re.sub(r"\s+", "", text)
         in_option_stage = stage in {"SIDE_SELECTION", "DRINK_SELECTION"}
@@ -1537,16 +1536,101 @@ class V2LangChainOrchestrator:
         return any(tok in t for tok in tokens)
 
     def _is_hesitation_signal(self, text: str, state: Dict[str, Any]) -> bool:
-        if bool(state.get("isHesitating")):
-            return True
+        hesitating = bool(state.get("isHesitating"))
         score = state.get("hesitationScore")
         try:
             if score is not None and float(score) >= 0.6:
-                return True
+                hesitating = True
         except Exception:
             pass
+        if hesitating:
+            hold_ms = self._extract_hesitation_hold_ms(state)
+            if hold_ms >= HESITATION_PROACTIVE_DELAY_MS:
+                return True
         t = (text or "").replace(" ", "")
         return any(tok in t for tok in ["모르겠", "어려", "헷갈", "고민"])
+
+    def _extract_hesitation_hold_ms(self, state: Dict[str, Any]) -> int:
+        if not isinstance(state, dict):
+            return 0
+
+        def _to_ms(value: Any) -> Optional[int]:
+            try:
+                if value is None:
+                    return None
+                if isinstance(value, (int, float)):
+                    v = float(value)
+                    if v <= 0:
+                        return None
+                    return int(v)
+                s = str(value).strip()
+                if not s:
+                    return None
+                if s.isdigit():
+                    return int(s)
+            except Exception:
+                return None
+            return None
+
+        direct_keys = [
+            "hesitationDurationMs",
+            "hesitationHoldMs",
+            "hesitationMs",
+            "hesitation_duration_ms",
+            "hesitation_hold_ms",
+        ]
+        for key in direct_keys:
+            v = _to_ms(state.get(key))
+            if v is not None:
+                return max(0, v)
+
+        page_hint = state.get("pageHint") if isinstance(state.get("pageHint"), dict) else {}
+        for key in direct_keys:
+            v = _to_ms(page_hint.get(key))
+            if v is not None:
+                return max(0, v)
+
+        started_keys = [
+            "hesitationStartedAtMs",
+            "hesitationStartMs",
+            "hesitationSinceMs",
+            "hesitation_started_at_ms",
+            "hesitation_start_ms",
+        ]
+        now_ms = int(time.time() * 1000)
+        for key in started_keys:
+            start_ms = _to_ms(state.get(key))
+            if start_ms is None and isinstance(page_hint, dict):
+                start_ms = _to_ms(page_hint.get(key))
+            if start_ms is not None and start_ms > 0:
+                return max(0, now_ms - start_ms)
+
+        return 0
+
+    def _build_hesitation_proactive_response(
+        self,
+        state: Dict[str, Any],
+        menu_items: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        catalog = self._extract_menu_catalog_from_state(state) if isinstance(state, dict) else []
+        if not catalog:
+            catalog = [x for x in menu_items if isinstance(x, dict)]
+        names = [str(it.get("name") or "").strip() for it in catalog[:3] if isinstance(it, dict)]
+        names = [n for n in names if n]
+        picks = ", ".join(names) if names else "대표 메뉴"
+        speech = f"뭘 고를지 고민되시나요? 오늘의 추천 메뉴는 {picks}예요. 원하시는 메뉴를 말씀해 주세요."
+        return self._decorate_parallel_channels(
+            {
+                "speech": speech,
+                "action": "NONE",
+                "actionData": {"stage": "PROACTIVE_HELP", "proactiveHelp": True, "reason": "HESITATION_2S"},
+                "intent": "PROACTIVE_HELP",
+                "stage": "PROACTIVE_HELP",
+            },
+            emotion="supportive",
+            expression="soft_smile",
+            motion="offer_help",
+        )
 
     def _is_checkout_intent(self, text: str) -> bool:
         t = (text or "").replace(" ", "")
@@ -2305,4 +2389,3 @@ class V2LangChainOrchestrator:
         if stage:
             out["stage"] = stage
         return out
-

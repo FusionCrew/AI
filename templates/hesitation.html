@@ -135,6 +135,13 @@
             <input id="adaptiveMode" type="checkbox" checked>
             Adaptive
           </label>
+          <label>
+            오버레이
+            <select id="overlayMode" style="margin-left:4px;">
+              <option value="pose" selected>Pose</option>
+              <option value="facemesh">FaceMesh</option>
+            </select>
+          </label>
         </div>
       </div>
 
@@ -169,6 +176,7 @@
     const intervalMsInput = document.getElementById('intervalMs');
     const captureSizeInput = document.getElementById('captureSize');
     const adaptiveModeInput = document.getElementById('adaptiveMode');
+    const overlayModeInput = document.getElementById('overlayMode');
 
     const statusEl = document.getElementById('status');
     const faceScoreEl = document.getElementById('faceScore');
@@ -186,7 +194,14 @@
     let stream = null;
     let timer = null;
     let inFlight = false;
-    let apiBase = '';
+    function resolveDefaultApiBase() {
+      const host = window.location.hostname || '127.0.0.1';
+      const port = window.location.port || '';
+      if (port === '8000') return '';
+      return `http://${host}:8000`;
+    }
+
+    let apiBase = resolveDefaultApiBase();
     let frameCount = 0;
     let fpsStart = performance.now();
     let latencyEma = 180;
@@ -259,6 +274,29 @@
         octx.beginPath();
         octx.arc(p.x * overlay.width, p.y * overlay.height, 2.6, 0, Math.PI * 2);
         octx.fill();
+      }
+    }
+
+    function drawFaceMeshOverlay(data) {
+      resizeOverlay();
+      octx.clearRect(0, 0, overlay.width, overlay.height);
+      const points = data.face_points || [];
+      if (!points.length) return;
+
+      octx.fillStyle = 'rgba(255, 120, 120, 0.88)';
+      for (const p of points) {
+        octx.beginPath();
+        octx.arc(p.x * overlay.width, p.y * overlay.height, 1.2, 0, Math.PI * 2);
+        octx.fill();
+      }
+    }
+
+    function drawSelectedOverlay(data) {
+      const mode = String(overlayModeInput?.value || 'pose');
+      if (mode === 'facemesh') {
+        drawFaceMeshOverlay(data);
+      } else {
+        drawPoseOverlay(data);
       }
     }
 
@@ -355,8 +393,8 @@
           body: JSON.stringify({ image, binary: false })
         });
 
-        if (res.status === 405 && !apiBase) {
-          apiBase = 'http://localhost:8000';
+        if (res.status === 405) {
+          apiBase = 'http://127.0.0.1:8000';
           url = `${apiBase}/api/hesitation/detect-base64`;
           res = await fetch(url, {
             method: 'POST',
@@ -371,13 +409,13 @@
         latencyEma = latencyEma * 0.8 + latency * 0.2;
 
         if (!res.ok) {
-          msgEl.textContent = `API 오류: ${res.status}`;
+          msgEl.textContent = `API 오류: ${res.status} (${url})`;
           return;
         }
 
         const data = await res.json();
         const pf = data.pose_features || {};
-        drawPoseOverlay(data);
+        drawSelectedOverlay(data);
 
         faceScoreEl.textContent = toFixed3(data.face_score);
         poseScoreEl.textContent = toFixed3(data.pose_score ?? data.body_score);
@@ -388,12 +426,12 @@
         finalEmaEl.textContent = toFixed3(data.final_ema ?? data.confidence);
 
         setStatus(Boolean(data.is_hesitating), data.status || data.label);
-        msgEl.textContent = data.error ? `오류: ${data.error}` : '정상 수신';
+        msgEl.textContent = data.error ? `오류: ${data.error}` : `정상 수신 (${url})`;
 
         frameCount += 1;
         refreshFpsCounter();
       } catch (e) {
-        msgEl.textContent = '네트워크/서버 오류';
+        msgEl.textContent = `네트워크/서버 오류 (${apiBase || window.location.origin})`;
         console.error(e);
       } finally {
         inFlight = false;
@@ -402,6 +440,9 @@
 
     startBtn.addEventListener('click', startCamera);
     stopBtn.addEventListener('click', stopCamera);
+    overlayModeInput?.addEventListener('change', () => {
+      octx.clearRect(0, 0, overlay.width, overlay.height);
+    });
   </script>
 </body>
 </html>

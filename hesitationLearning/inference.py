@@ -23,8 +23,8 @@ from .pose import BodyGestureDetector
 
 
 DEFAULT_CONFIG = {
-    "face_weight": 0.7,
-    "pose_weight": 0.3,
+    "face_weight": 0.8,
+    "pose_weight": 0.2,
     "ema_alpha": 0.2,
     "hesitation_threshold": 0.6,
     "face_override_enabled": True,
@@ -86,6 +86,7 @@ class HesitationDetector:
             "label": "NORMAL",
             "status": "NORMAL",
             "face_score": 0.0,
+            "face_points": [],
             "body_score": 0.0,
             "pose_score": 0.0,
             "final_raw": 0.0,
@@ -119,6 +120,20 @@ class HesitationDetector:
         face_score = float(face_result["face_score"])
         result["face_score"] = face_score
         result["face_emotion"] = face_result["face_emotion"]
+        try:
+            face_emotion = face_result.get("face_emotion", {}) if isinstance(face_result, dict) else {}
+            face_landmarks = face_emotion.get("face_landmarks") if isinstance(face_emotion, dict) else None
+            if face_landmarks and getattr(face_landmarks, "landmark", None):
+                result["face_points"] = [
+                    {
+                        "x": float(lm.x),
+                        "y": float(lm.y),
+                        "z": float(getattr(lm, "z", 0.0)),
+                    }
+                    for lm in face_landmarks.landmark
+                ]
+        except Exception:
+            result["face_points"] = []
 
         # 3) Weighted fusion + EMA
         face_w = float(self.config["face_weight"])
