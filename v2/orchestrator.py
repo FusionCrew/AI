@@ -89,6 +89,8 @@ class V2LangChainOrchestrator:
             "off",
             "no",
         }
+        self._compiled_langgraph_app: Any = None
+        self._langgraph_llm_cache: Dict[str, Any] = {}
 
     def set_vector_search_provider(
         self,
@@ -143,7 +145,7 @@ class V2LangChainOrchestrator:
         if not latest_user:
             return {
                 "result": self._normalize_output(
-                    {"speech": "?ъ슜??諛쒗솕媛 鍮꾩뼱 ?덉뼱??", "action": "NONE", "actionData": {}},
+                    {"speech": "사용자 발화가 비어 있어요.", "action": "NONE", "actionData": {}},
                     "tool-fastpath",
                 ),
                 "trace": trace,
@@ -287,31 +289,28 @@ class V2LangChainOrchestrator:
             if current != self._last_openai_api_key:
                 os.environ["OPENAI_API_KEY"] = self._last_openai_api_key
 
-    @traceable_safe(name="v2.orchestrator.langgraph", run_type="chain")
-    async def _run_langgraph(
-        self,
-        messages: List[Any],
-        latest_user: str,
-        state: Dict[str, Any],
-        menu_items: List[Dict[str, Any]],
-        order_type: str,
-    ) -> Dict[str, Any]:
+    def _get_langgraph_llm(self, model_name: str):
         from langchain_openai import ChatOpenAI
-        from langgraph.graph import END, StateGraph
 
-        model_name = os.getenv(self.model_env_var, os.getenv(self.fallback_model_env_var, "gpt-4o-mini"))
-        llm = ChatOpenAI(model=model_name, temperature=0.1)
-        system_prompt = self._build_system_prompt(order_type, state, menu_items)
-        history_text = self._history_for_model(messages, latest_user)
+        llm = self._langgraph_llm_cache.get(model_name)
+        if llm is None:
+            llm = ChatOpenAI(model=model_name, temperature=0.1)
+            self._langgraph_llm_cache[model_name] = llm
+        return llm
+
+    def _get_compiled_langgraph_app(self):
+        if self._compiled_langgraph_app is not None:
+            return self._compiled_langgraph_app
+
+        from langgraph.graph import END, StateGraph
 
         async def session_init_node(graph_state: Dict[str, Any]) -> Dict[str, Any]:
             stage = self._infer_stage(graph_state.get("state") or {})
             return {"stage": stage}
 
         async def route_node(graph_state: Dict[str, Any]) -> Dict[str, Any]:
-            _ = graph_state
-            text = latest_user
-            state_obj = state if isinstance(state, dict) else {}
+            text = str(graph_state.get("latest_user") or "")
+            state_obj = graph_state.get("state") if isinstance(graph_state.get("state"), dict) else {}
             if self._is_hesitation_signal(text, state_obj):
                 return {"route": "policy"}
             if self._is_recommendation_query(text):
@@ -319,9 +318,9 @@ class V2LangChainOrchestrator:
             return {"route": "policy"}
 
         async def recommend_node(graph_state: Dict[str, Any]) -> Dict[str, Any]:
-            _ = graph_state
-            text = latest_user
-            state_obj = state if isinstance(state, dict) else {}
+            text = str(graph_state.get("latest_user") or "")
+            state_obj = graph_state.get("state") if isinstance(graph_state.get("state"), dict) else {}
+            menu_items = graph_state.get("menu_items") if isinstance(graph_state.get("menu_items"), list) else []
             rec_allergens = self._detect_query_allergen_terms(text, state_obj)
             rec_ing = self._extract_recommend_ingredient_term(
                 text,
@@ -329,15 +328,11 @@ class V2LangChainOrchestrator:
                 exclude_terms=rec_allergens,
             )
             if (rec_allergens or rec_ing) and not self._has_catalog_ingredient_data(state_obj):
-                logger.warning(
-                    "v2.recommend.langgraph.enrich_on_demand trigger=true allergens=%s ingredient=%s",
-                    rec_allergens,
-                    rec_ing,
-                )
                 try:
-                    enriched = await self._enrich_menu_items_with_allergens(menu_items if isinstance(menu_items, list) else [])
+                    enriched = await self._enrich_menu_items_with_allergens(menu_items)
                     state_obj = dict(state_obj)
                     state_obj["menuCatalog"] = [dict(it) for it in enriched if isinstance(it, dict)]
+                    return {"state": state_obj, "menu_items": enriched, "done": bool(self._build_vector_recommendation_response(text, state_obj)), "result": self._build_vector_recommendation_response(text, state_obj)}
                 except Exception:
                     logger.exception("v2.recommend.langgraph.enrich_on_demand failed")
             result = self._build_vector_recommendation_response(text, state_obj)
@@ -346,32 +341,31 @@ class V2LangChainOrchestrator:
             return {"done": False}
 
         async def policy_node(graph_state: Dict[str, Any]) -> Dict[str, Any]:
-            _ = graph_state
             result = await self._run_stage_policy(
-                user_text=latest_user,
-                state=state if isinstance(state, dict) else {},
-                menu_items=menu_items if isinstance(menu_items, list) else [],
+                user_text=str(graph_state.get("latest_user") or ""),
+                state=graph_state.get("state") if isinstance(graph_state.get("state"), dict) else {},
+                menu_items=graph_state.get("menu_items") if isinstance(graph_state.get("menu_items"), list) else [],
             )
             if result:
                 return {"done": True, "result": result}
             return {"done": False}
 
         async def fsm_node(graph_state: Dict[str, Any]) -> Dict[str, Any]:
-            _ = graph_state
             if not self.enable_v21_parser or not self.enable_v21_fsm:
                 return {"done": False}
-            state_obj = state if isinstance(state, dict) else {}
+            state_obj = graph_state.get("state") if isinstance(graph_state.get("state"), dict) else {}
+            menu_items = graph_state.get("menu_items") if isinstance(graph_state.get("menu_items"), list) else []
             stage_now = self._infer_stage(state_obj)
             cart_items = state_obj.get("cartItems") if isinstance(state_obj.get("cartItems"), list) else []
             parsed = parse_state_intent(
-                user_text=latest_user,
+                user_text=str(graph_state.get("latest_user") or ""),
                 state=state_obj,
-                menu_items=menu_items if isinstance(menu_items, list) else [],
+                menu_items=menu_items,
             )
             out = self._run_v21_fsm_policy(
                 parsed=parsed,
                 stage=stage_now,
-                menu_items=menu_items if isinstance(menu_items, list) else [],
+                menu_items=menu_items,
                 cart_items=[x for x in cart_items if isinstance(x, dict)],
             )
             if out:
@@ -379,11 +373,14 @@ class V2LangChainOrchestrator:
             return {"done": False}
 
         async def plan_node(graph_state: Dict[str, Any]) -> Dict[str, Any]:
-            _ = graph_state
+            system_prompt = str(graph_state.get("system_prompt") or "")
+            history_text = str(graph_state.get("history_text") or "")
+            model_name = str(graph_state.get("model_name") or "gpt-4o-mini")
+            llm = self._get_langgraph_llm(model_name)
             raw_msg = await llm.ainvoke(
                 [
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": f"{history_text}\n\n諛섎뱶??JSON留?異쒕젰?섏꽭??"},
+                    {"role": "user", "content": f"{history_text}\n\n반드시 JSON만 출력하세요"},
                 ]
             )
             raw = str(getattr(raw_msg, "content", "") or "").strip()
@@ -410,43 +407,31 @@ class V2LangChainOrchestrator:
         graph.add_node("plan", plan_node)
         graph.set_entry_point("session_init")
         graph.add_edge("session_init", "route")
-        graph.add_conditional_edges(
-            "route",
-            lambda s: s.get("route", "policy"),
-            {
-                "recommend": "recommend",
-                "policy": "policy",
-            },
-        )
-        graph.add_conditional_edges(
-            "recommend",
-            lambda s: "done" if bool(s.get("done")) else "fsm",
-            {
-                "done": END,
-                "fsm": "fsm",
-            },
-        )
-        graph.add_conditional_edges(
-            "fsm",
-            lambda s: "done" if bool(s.get("done")) else "policy",
-            {
-                "done": END,
-                "policy": "policy",
-            },
-        )
-        graph.add_conditional_edges(
-            "policy",
-            lambda s: "done" if bool(s.get("done")) else "plan",
-            {
-                "done": END,
-                "plan": "plan",
-            },
-        )
+        graph.add_conditional_edges("route", lambda s: s.get("route", "policy"), {"recommend": "recommend", "policy": "policy"})
+        graph.add_conditional_edges("recommend", lambda s: "done" if bool(s.get("done")) else "fsm", {"done": END, "fsm": "fsm"})
+        graph.add_conditional_edges("fsm", lambda s: "done" if bool(s.get("done")) else "policy", {"done": END, "policy": "policy"})
+        graph.add_conditional_edges("policy", lambda s: "done" if bool(s.get("done")) else "plan", {"done": END, "plan": "plan"})
         graph.add_edge("plan", END)
-        app = graph.compile()
+        self._compiled_langgraph_app = graph.compile()
+        return self._compiled_langgraph_app
 
+    @traceable_safe(name="v2.orchestrator.langgraph", run_type="chain")
+    async def _run_langgraph(
+        self,
+        messages: List[Any],
+        latest_user: str,
+        state: Dict[str, Any],
+        menu_items: List[Dict[str, Any]],
+        order_type: str,
+    ) -> Dict[str, Any]:
+        model_name = os.getenv(self.model_env_var, os.getenv(self.fallback_model_env_var, "gpt-4o-mini"))
+        system_prompt = self._build_system_prompt(order_type, state, menu_items)
+        history_text = self._history_for_model(messages, latest_user)
+        app = self._get_compiled_langgraph_app()
         result = await app.ainvoke(
             {
+                "model_name": model_name,
+                "system_prompt": system_prompt,
                 "history_text": history_text,
                 "latest_user": latest_user,
                 "state": state,
@@ -468,19 +453,17 @@ class V2LangChainOrchestrator:
         model_name = os.getenv(self.model_env_var, os.getenv(self.fallback_model_env_var, "gpt-4o-mini"))
         system_prompt = self._build_system_prompt(order_type, state, menu_items)
         history_text = self._history_for_model(messages, latest_user)
-        content = f"{history_text}\n\n諛섎뱶??JSON留?異쒕젰?섏꽭??"
+        content = f"{history_text}\n\n반드시 JSON만 출력해 주세요."
 
-        resp = openai_client.chat.completions.create(
+        resp = await asyncio.to_thread(
+            openai_client.chat.completions.create,
             model=model_name,
             temperature=0.1,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": content},
-            ],
+            messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": content}],
         )
         raw = (resp.choices[0].message.content or "").strip()
         if not raw:
-            return {"speech": "???ㅼ뿀?댁슂. ??踰???留먯???二쇱꽭??", "action": "NONE", "actionData": {}}
+            return {"speech": "잘 들었어요. 한 번 더 말씀해 주세요.", "action": "NONE", "actionData": {}}
 
         try:
             return json.loads(raw)
@@ -521,18 +504,18 @@ class V2LangChainOrchestrator:
         stage = self._infer_stage(state if isinstance(state, dict) else {})
 
         return (
-            "?덈뒗 ?ㅼ삤?ㅽ겕 ?뚯꽦 二쇰Ц ?ㅼ??ㅽ듃?덉씠?곕떎.\n"
-            "JSON ?ㅽ궎留덈쭔 異쒕젰?대씪: {\"speech\": string, \"action\": string, \"actionData\": object}\n"
-            f"?덉슜 action: {sorted(list(AllowedAction))}\n"
-            "洹쒖튃: menuItemId??移댄깉濡쒓렇???덈뒗 媛믩쭔 ?ъ슜.\n"
-            "vectorCandidates??紐⑦샇 吏덉쓽 ?꾨낫?대ŉ 理쒖쥌 ?뺤젙? 移댄깉濡쒓렇? 臾몃㎘?쇰줈 ?섎씪.\n"
-            "二쇰Ц ?④퀎(stage)瑜?怨좊젮???듯빐?? 寃곗젣 ?꾩뿉 寃곗젣?섎떒 ?좏깮???좊룄?섏? 留덈씪.\n"
-            "?묐떟?먮뒗 live2d 媛먯젙 ?좊땲硫붿씠??蹂묐젹 ?ㅽ뻾??怨좊젮?섎릺, action 寃곗젙???곗꽑?섎씪.\n"
-            f"?꾩옱 二쇰Ц ??? {order_type}\n"
-            f"異붾줎???④퀎(stage): {stage}\n"
-            f"?꾩옱 ?곹깭: {json.dumps(state, ensure_ascii=False)}\n"
+            "당신은 키오스크 음성 주문 어시스턴트입니다.\n"
+            "반드시 JSON 스키마로만 응답하세요: {\"speech\": string, \"action\": string, \"actionData\": object}\n"
+            f"허용 action: {sorted(list(AllowedAction))}\n"
+            "규칙: menuItemId는 카탈로그에 있는 값만 사용합니다.\n"
+            "vectorCandidates는 후보 정보이며, 최종 판단은 카탈로그와 문맥으로 합니다.\n"
+            "주문 단계(stage)를 고려해 결제 전에는 결제수단 선택을 유도하지 마세요.\n"
+            "응답은 한국어 존댓말로 간결하게 작성하세요.\n"
+            f"현재 주문 타입: {order_type}\n"
+            f"추론된 단계(stage): {stage}\n"
+            f"현재 상태: {json.dumps(state, ensure_ascii=False)}\n"
             f"메뉴 카탈로그: {json.dumps(catalog, ensure_ascii=False)}\n"
-            f"Vector ?꾨낫: {json.dumps(vector_candidates, ensure_ascii=False)}\n"
+            f"Vector 후보: {json.dumps(vector_candidates, ensure_ascii=False)}\n"
         )
 
     def _history_for_model(self, messages: List[Any], latest_user: str) -> str:
@@ -747,7 +730,7 @@ class V2LangChainOrchestrator:
         if intent == "SET_DINING" and parsed.dining_type in {"DINE_IN", "TAKE_OUT"}:
             return self._decorate_parallel_channels(
                 {
-                    "speech": "?앹궗 諛⑹떇???ㅼ젙?좉쾶??",
+                    "speech": "식사 방식을 설정할게요.",
                     "action": "SET_DINING",
                     "actionData": {
                         "diningType": parsed.dining_type,
@@ -766,7 +749,7 @@ class V2LangChainOrchestrator:
         if intent == "SELECT_PAYMENT" and parsed.payment_method in {"CARD", "POINT", "SIMPLE"}:
             return self._decorate_parallel_channels(
                 {
-                    "speech": "?좏깮??寃곗젣 ?섎떒?쇰줈 吏꾪뻾?좉쾶??",
+                    "speech": "선택한 결제 수단으로 진행할게요.",
                     "action": "SELECT_PAYMENT",
                     "actionData": {
                         "method": parsed.payment_method,
@@ -785,7 +768,7 @@ class V2LangChainOrchestrator:
         if intent == "CHECKOUT":
             return self._decorate_parallel_channels(
                 {
-                    "speech": "二쇰Ц ?댁뿭???뺤씤????寃곗젣瑜?吏꾪뻾?좉쾶??",
+                    "speech": "주문 내역을 확인하고 결제를 진행할게요.",
                     "action": "CHECKOUT",
                     "actionData": {"stage": "ORDER_REVIEW", "parser": "v2.1", "reason": parsed.reason},
                     "intent": "ORDER_FLOW",
@@ -1161,7 +1144,7 @@ class V2LangChainOrchestrator:
                 )
             return self._decorate_parallel_channels(
                 {
-                    "speech": "二쇰Ц ?댁뿭 ?붾㈃?쇰줈 ?대룞?좉쾶?? ?뺤씤 ??寃곗젣瑜?吏꾪뻾??二쇱꽭??",
+                    "speech": "주문 내역 화면으로 이동할게요. 확인 후 결제를 진행해 주세요.",
                     "action": "CHECKOUT",
                     "actionData": {"stage": "ORDER_REVIEW"},
                     "intent": "ORDER_FLOW",
@@ -1175,7 +1158,7 @@ class V2LangChainOrchestrator:
         if self._is_check_cart_intent(text):
             return self._decorate_parallel_channels(
                 {
-                    "speech": "?λ컮援щ땲瑜??뺤씤???쒕┫寃뚯슂.",
+                    "speech": "장바구니를 확인해 드릴게요.",
                     "action": "CHECK_CART",
                     "actionData": {"stage": "CART"},
                     "intent": "ORDER_FLOW",
@@ -1189,7 +1172,7 @@ class V2LangChainOrchestrator:
         if self._is_continue_order_intent(text):
             return self._decorate_parallel_channels(
                 {
-                    "speech": "醫뗭븘?? 怨꾩냽 二쇰Ц???꾩??쒕┫寃뚯슂.",
+                    "speech": "좋아요. 계속 주문 도와드릴게요.",
                     "action": "CONTINUE_ORDER",
                     "actionData": {"stage": "MAIN_MENU"},
                     "intent": "ORDER_FLOW",
@@ -1203,7 +1186,7 @@ class V2LangChainOrchestrator:
         if self._is_staff_call_intent(text):
             return self._decorate_parallel_channels(
                 {
-                    "speech": "吏곸썝???몄텧?좉쾶?? ?좎떆留?湲곕떎??二쇱꽭??",
+                    "speech": "직원을 호출할게요. 잠시만 기다려 주세요.",
                     "action": "CALL_STAFF",
                     "actionData": {"stage": stage},
                     "intent": "ORDER_FLOW",

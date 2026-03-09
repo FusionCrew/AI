@@ -35,7 +35,10 @@ class BodyGestureDetector:
         "w_hand_hover": 0.5,
         "w_torso_lean": 0.3,
         "w_sway": 0.2,
-        "min_visibility": 0.5,
+        # Kiosk cameras often capture upper-body only.
+        # Keep shoulders as required landmarks and treat wrists/hips as optional.
+        "min_visibility_core": 0.35,
+        "min_visibility_optional": 0.20,
     }
 
     def __init__(self, config: Dict = None):
@@ -124,16 +127,14 @@ class BodyGestureDetector:
             return base
 
         lms = results.pose_landmarks.landmark
-        idx = [
-            self.LEFT_SHOULDER,
-            self.RIGHT_SHOULDER,
-            self.LEFT_WRIST,
-            self.RIGHT_WRIST,
-            self.LEFT_HIP,
-            self.RIGHT_HIP,
-        ]
-        min_vis = float(self.config["min_visibility"])
-        if any(float(lms[i].visibility) < min_vis for i in idx):
+        core_vis = float(self.config.get("min_visibility_core", 0.35))
+        optional_vis = float(self.config.get("min_visibility_optional", 0.20))
+
+        # Require only shoulders as core. Other points are optional.
+        if (
+            float(lms[self.LEFT_SHOULDER].visibility) < core_vis
+            or float(lms[self.RIGHT_SHOULDER].visibility) < core_vis
+        ):
             return base
 
         self.pose_landmarks = results.pose_landmarks
@@ -146,10 +147,10 @@ class BodyGestureDetector:
 
         l_sh = self._pt(lms[self.LEFT_SHOULDER])
         r_sh = self._pt(lms[self.RIGHT_SHOULDER])
-        l_wr = self._pt(lms[self.LEFT_WRIST])
-        r_wr = self._pt(lms[self.RIGHT_WRIST])
-        l_hp = self._pt(lms[self.LEFT_HIP])
-        r_hp = self._pt(lms[self.RIGHT_HIP])
+        l_wr = self._pt(lms[self.LEFT_WRIST]) if float(lms[self.LEFT_WRIST].visibility) >= optional_vis else None
+        r_wr = self._pt(lms[self.RIGHT_WRIST]) if float(lms[self.RIGHT_WRIST].visibility) >= optional_vis else None
+        l_hp = self._pt(lms[self.LEFT_HIP]) if float(lms[self.LEFT_HIP].visibility) >= optional_vis else None
+        r_hp = self._pt(lms[self.RIGHT_HIP]) if float(lms[self.RIGHT_HIP].visibility) >= optional_vis else None
 
         shoulder_width = self._dist(l_sh, r_sh)
         base["shoulder_width"] = shoulder_width
@@ -158,39 +159,62 @@ class BodyGestureDetector:
             return base
 
         shoulder_center = ((l_sh[0] + r_sh[0]) * 0.5, (l_sh[1] + r_sh[1]) * 0.5)
-        hip_center = ((l_hp[0] + r_hp[0]) * 0.5, (l_hp[1] + r_hp[1]) * 0.5)
+        if l_hp is not None and r_hp is not None:
+            hip_center = ((l_hp[0] + r_hp[0]) * 0.5, (l_hp[1] + r_hp[1]) * 0.5)
+            has_real_hip = True
+        elif l_hp is not None:
+            hip_center = l_hp
+            has_real_hip = True
+        elif r_hp is not None:
+            hip_center = r_hp
+            has_real_hip = True
+        else:
+            # Fallback estimate for upper-body-only framing.
+            hip_center = (shoulder_center[0], shoulder_center[1] + shoulder_width * 1.2)
+            has_real_hip = False
+
         torso_center = (
             (shoulder_center[0] + hip_center[0]) * 0.5,
             (shoulder_center[1] + hip_center[1]) * 0.5,
         )
 
         # Update histories
-        self.left_wrist_history.append(l_wr)
-        self.right_wrist_history.append(r_wr)
-        self.hip_x_history.append(hip_center[0])
+        if l_wr is not None:
+            self.left_wrist_history.append(l_wr)
+        if r_wr is not None:
+            self.right_wrist_history.append(r_wr)
+        # If hip is missing, use shoulder center x for sway baseline.
+        self.hip_x_history.append(hip_center[0] if has_real_hip else shoulder_center[0])
 
         # 1) hand_hover
-        left_hover = self._hand_hover_score(
-            l_wr, self.left_wrist_history, hip_center, torso_center, shoulder_width
+        left_hover = (
+            self._hand_hover_score(l_wr, self.left_wrist_history, hip_center, torso_center, shoulder_width)
+            if l_wr is not None
+            else 0.0
         )
-        right_hover = self._hand_hover_score(
-            r_wr, self.right_wrist_history, hip_center, torso_center, shoulder_width
+        right_hover = (
+            self._hand_hover_score(r_wr, self.right_wrist_history, hip_center, torso_center, shoulder_width)
+            if r_wr is not None
+            else 0.0
         )
         hand_hover = max(left_hover, right_hover)
 
         # 2) torso_lean
-        vx = shoulder_center[0] - hip_center[0]
-        vy = shoulder_center[1] - hip_center[1]
-        lean_ratio = abs(vx) / (abs(vy) + 1e-6)
-        lean_a = float(self.config["lean_a"])
-        lean_b = float(self.config["lean_b"])
-        lean_geom = self._clamp((lean_ratio - lean_a) / (lean_b - lean_a))
+        if has_real_hip:
+            vx = shoulder_center[0] - hip_center[0]
+            vy = shoulder_center[1] - hip_center[1]
+            lean_ratio = abs(vx) / (abs(vy) + 1e-6)
+            lean_a = float(self.config["lean_a"])
+            lean_b = float(self.config["lean_b"])
+            lean_geom = self._clamp((lean_ratio - lean_a) / (lean_b - lean_a))
 
-        dy = shoulder_center[1] - hip_center[1]
-        dy_a = float(self.config["dy_a"])
-        dy_b = float(self.config["dy_b"])
-        dy_score = self._clamp((dy - dy_a) / (dy_b - dy_a))
-        torso_lean = self._clamp(0.7 * lean_geom + 0.3 * dy_score)
+            dy = shoulder_center[1] - hip_center[1]
+            dy_a = float(self.config["dy_a"])
+            dy_b = float(self.config["dy_b"])
+            dy_score = self._clamp((dy - dy_a) / (dy_b - dy_a))
+            torso_lean = self._clamp(0.7 * lean_geom + 0.3 * dy_score)
+        else:
+            torso_lean = 0.0
 
         # 3) sway
         if len(self.hip_x_history) >= 2:

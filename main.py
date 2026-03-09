@@ -1,6 +1,6 @@
-﻿from fastapi import FastAPI, HTTPException, UploadFile, File, Request
+﻿from fastapi import FastAPI, HTTPException, UploadFile, File, Request, Form
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 from datetime import datetime
@@ -126,6 +126,72 @@ class TtsRequest(BaseModel):
     text: str
     voice: str = "nova"
     speed: float = 1.0
+
+
+def _transcribe_audio_sync(
+    audio_bytes: bytes,
+    model: str,
+    language: str,
+    mime_type: Optional[str] = "audio/wav",
+) -> str:
+    if not client:
+        raise RuntimeError("OpenAI client is not available")
+
+    temp_audio_path = None
+    try:
+        suffix = ".wav"
+        mt = (mime_type or "").lower()
+        if "webm" in mt:
+            suffix = ".webm"
+        elif "mp3" in mt or "mpeg" in mt:
+            suffix = ".mp3"
+        elif "mp4" in mt or "m4a" in mt:
+            suffix = ".m4a"
+
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp_audio:
+            temp_audio.write(audio_bytes)
+            temp_audio_path = temp_audio.name
+
+        with open(temp_audio_path, "rb") as audio_file:
+            transcript = client.audio.transcriptions.create(
+                model=model or "whisper-1",
+                file=audio_file,
+                language=language,
+                prompt="키오스크 주문 대화. 주요 단어: 주문하기, 이전, 뒤로, 버거, 사이드, 음료, 세트, 단품, 결제, 매장, 포장.",
+            )
+            return str(getattr(transcript, "text", "") or "").strip()
+    finally:
+        if temp_audio_path and os.path.exists(temp_audio_path):
+            try:
+                os.remove(temp_audio_path)
+            except Exception:
+                pass
+
+
+async def _transcribe_audio_async(
+    audio_bytes: bytes,
+    model: str,
+    language: str,
+    mime_type: Optional[str] = "audio/wav",
+) -> str:
+    return await asyncio.to_thread(_transcribe_audio_sync, audio_bytes, model, language, mime_type)
+
+
+def _synthesize_tts_audio_sync(text: str, voice: str, speed: float) -> bytes:
+    if not client:
+        raise RuntimeError("OpenAI client is not available")
+
+    response = client.audio.speech.create(
+        model="tts-1",
+        voice=voice if voice in ["alloy", "echo", "fable", "onyx", "nova", "shimmer"] else "nova",
+        input=text,
+        speed=speed,
+    )
+    return bytes(response.content or b"")
+
+
+async def _synthesize_tts_audio_async(text: str, voice: str, speed: float) -> bytes:
+    return await asyncio.to_thread(_synthesize_tts_audio_sync, text, voice, speed)
 
 class ChatMessage(BaseModel):
     role: str
@@ -642,38 +708,21 @@ async def stt(request: SttRequest):
     if not client:
         return CommonResponse(success=False, error={"code": "NO_API_KEY", "message": "OpenAI API Key not found"})
 
-    temp_audio_path = None
     try:
         # Decode Base64 payload (supports raw base64 and data URL).
         b64 = request.audioBase64.split(",", 1)[-1]
         audio_data = base64.b64decode(b64)
-
-        suffix = ".wav"
-        mt = (request.mimeType or "").lower()
-        if "webm" in mt:
-            suffix = ".webm"
-        elif "mp3" in mt or "mpeg" in mt:
-            suffix = ".mp3"
-        elif "mp4" in mt or "m4a" in mt:
-            suffix = ".m4a"
-
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp_audio:
-            temp_audio.write(audio_data)
-            temp_audio_path = temp_audio.name
-
-        # Call OpenAI Whisper
-        with open(temp_audio_path, "rb") as audio_file:
-            transcript = client.audio.transcriptions.create(
-                model=request.model or "whisper-1",
-                file=audio_file,
-                language=request.language,
-                prompt="키오스크 주문 대화. 주요 단어: 주문하기, 이전, 뒤로, 버거, 사이드, 음료, 세트, 단품, 결제, 매장, 포장."
-            )
+        transcript_text = await _transcribe_audio_async(
+            audio_bytes=audio_data,
+            model=request.model or "whisper-1",
+            language=request.language,
+            mime_type=request.mimeType or "audio/wav",
+        )
         
         return CommonResponse(
             success=True,
             data={
-                "text": transcript.text,
+                "text": transcript_text,
                 "confidence": 0.99 
             },
             meta={"model": request.model or "whisper-1", "provider": "openai"},
@@ -684,12 +733,36 @@ async def stt(request: SttRequest):
         if "invalid_api_key" in err_msg or "Incorrect API key provided" in err_msg:
             err_msg = "Invalid OpenAI API key"
         return CommonResponse(success=False, error={"code": "STT_FAILED", "message": err_msg})
-    finally:
-        if temp_audio_path and os.path.exists(temp_audio_path):
-            try:
-                os.remove(temp_audio_path)
-            except Exception:
-                pass
+
+@app.post("/api/v1/stt/upload")
+@app.post("/api/v2/stt/upload")
+async def stt_upload(
+    audio: UploadFile = File(...),
+    language: str = Form("ko"),
+    model: str = Form("whisper-1"),
+    mimeType: Optional[str] = Form("audio/wav"),
+):
+    if not client:
+        return CommonResponse(success=False, error={"code": "NO_API_KEY", "message": "OpenAI API Key not found"})
+
+    try:
+        audio_data = await audio.read()
+        if not audio_data:
+            return CommonResponse(success=False, error={"code": "STT_FAILED", "message": "Empty audio"})
+        transcript_text = await _transcribe_audio_async(
+            audio_bytes=audio_data,
+            model=model or "whisper-1",
+            language=language or "ko",
+            mime_type=mimeType or (audio.content_type or "audio/wav"),
+        )
+        return CommonResponse(
+            success=True,
+            data={"text": transcript_text, "confidence": 0.99},
+            meta={"model": model or "whisper-1", "provider": "openai", "transport": "multipart"},
+            requestId=f"req_stt_upload_{int(datetime.now().timestamp())}",
+        )
+    except Exception as e:
+        return CommonResponse(success=False, error={"code": "STT_FAILED", "message": str(e)})
 
 # 2. TTS (OpenAI TTS)
 @app.post("/api/v1/tts")
@@ -699,15 +772,11 @@ async def tts(request: TtsRequest):
         return CommonResponse(success=False, error={"code": "NO_API_KEY", "message": "OpenAI API Key not found"})
 
     try:
-        response = client.audio.speech.create(
-            model="tts-1",
-            voice=request.voice if request.voice in ["alloy", "echo", "fable", "onyx", "nova", "shimmer"] else "nova",
-            input=request.text,
-            speed=request.speed
+        audio_content = await _synthesize_tts_audio_async(
+            text=request.text,
+            voice=request.voice,
+            speed=request.speed,
         )
-        
-        # Binary to Base64
-        audio_content = response.content
         audio_base64 = base64.b64encode(audio_content).decode('utf-8')
 
         return CommonResponse(
@@ -718,6 +787,22 @@ async def tts(request: TtsRequest):
         )
     except Exception as e:
         return CommonResponse(success=False, error={"code": "TTS_FAILED", "message": str(e)})
+
+
+@app.post("/api/v1/tts/stream")
+@app.post("/api/v2/tts/stream")
+async def tts_stream(request: TtsRequest):
+    if not client:
+        raise HTTPException(status_code=500, detail="OpenAI API Key not found")
+    try:
+        audio_content = await _synthesize_tts_audio_async(
+            text=request.text,
+            voice=request.voice,
+            speed=request.speed,
+        )
+        return Response(content=audio_content, media_type="audio/mpeg")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/v1/llm/chat")
 async def llm_chat(request: LlmChatRequest):
@@ -1017,7 +1102,8 @@ async def llm_chat(request: LlmChatRequest):
 
         messages = [{"role": "system", "content": system_prompt}] + history_msgs[-12:]
 
-        resp = client.chat.completions.create(
+        resp = await asyncio.to_thread(
+            client.chat.completions.create,
             model=os.getenv("OPENAI_CHAT_MODEL", "gpt-4o-mini"),
             temperature=0.1,
             messages=messages,
@@ -1498,5 +1584,3 @@ async def translate_sign_language(video: UploadFile = File(...)):
         # ?꾩떆 ?뚯씪 ??젣
         if os.path.exists(tmp_path):
             os.remove(tmp_path)
-
-

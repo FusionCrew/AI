@@ -1,0 +1,12 @@
+.git
+venv
+.venv_langgraph
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.log
+.env
+_runlogs
+output_hesitation.mp4
+.codex_backup_untracked_20260223_112345
