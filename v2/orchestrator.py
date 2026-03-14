@@ -234,6 +234,22 @@ class V2LangChainOrchestrator:
                 if isinstance(working_state, dict):
                     working_state["menuCatalog"] = [dict(it) for it in menu_items if isinstance(it, dict)]
 
+            # Recommendation answers are deterministic and DB-grounded here.
+            # Return them before LangGraph so they are not lost by downstream routing.
+            recommendation_result = self._build_vector_recommendation_response(latest_user, working_state)
+            if recommendation_result:
+                mark(
+                    "recommendation_short_circuit",
+                    {
+                        "stage": str(recommendation_result.get("stage") or "RECOMMENDATION"),
+                        "intent": str(recommendation_result.get("intent") or "MENU_RECOMMEND"),
+                    },
+                )
+                return {
+                    "result": self._normalize_output(recommendation_result, "recommendation-short-circuit"),
+                    "trace": trace,
+                }
+
         if self._can_use_langgraph():
             try:
                 out = await self._run_langgraph(messages, latest_user, working_state, menu_items, order_type)

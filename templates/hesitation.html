@@ -16,47 +16,101 @@
     }
     body {
       margin: 0;
+      height: 100vh;
+      display: flex;
+      justify-content: center;
       font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
       color: var(--text);
       background: radial-gradient(circle at 20% 10%, #1a2230 0%, var(--bg) 45%);
+      overflow: hidden;
     }
     .wrap {
-      max-width: 1200px;
+      width: min(1280px, 100%);
       margin: 0 auto;
       padding: 20px;
+      box-sizing: border-box;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
     }
     h1 {
       margin: 0 0 16px;
       font-size: 24px;
       letter-spacing: 0.2px;
+      flex: 0 0 auto;
     }
     .grid {
       display: grid;
       grid-template-columns: 2fr 1fr;
       gap: 16px;
+      flex: 1 1 auto;
+      min-height: 0;
     }
     .panel {
       background: var(--panel);
       border: 1px solid var(--line);
       border-radius: 14px;
       padding: 14px;
+      min-height: 0;
+      box-sizing: border-box;
     }
-    #video {
-      width: 100%;
-      max-height: 70vh;
+    .preview-layout {
+      display: flex;
+      flex-direction: column;
+    }
+    .preview-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      grid-template-rows: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+      flex: 1 1 auto;
+      min-height: 0;
+    }
+    .preview-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      min-height: 0;
+    }
+    .preview-label {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--muted);
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .preview-video {
+      display: block;
+      width: auto;
+      height: 100%;
+      max-width: 100%;
+      max-height: 100%;
       background: #000;
       border-radius: 10px;
+      object-fit: contain;
     }
     .video-wrap {
       position: relative;
       width: 100%;
+      flex: 1 1 auto;
+      min-height: 0;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      border-radius: 10px;
+      background: #000;
     }
-    #overlay {
+    .preview-overlay {
       position: absolute;
-      left: 0;
-      top: 0;
-      width: 100%;
-      height: 100%;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      width: auto;
+      height: auto;
+      max-width: 100%;
+      max-height: 100%;
       pointer-events: none;
       border-radius: 10px;
     }
@@ -67,6 +121,10 @@
       margin-top: 12px;
       flex-wrap: wrap;
       align-items: center;
+      flex: 0 0 auto;
+    }
+    .metrics-panel {
+      overflow: auto;
     }
     button {
       border: 0;
@@ -102,6 +160,22 @@
     }
     @media (max-width: 900px) {
       .grid { grid-template-columns: 1fr; }
+      .wrap {
+        height: auto;
+        min-height: 100vh;
+      }
+      body {
+        height: auto;
+        min-height: 100vh;
+        overflow: auto;
+      }
+      .video-wrap {
+        min-height: 220px;
+      }
+      .preview-video {
+        max-width: 100%;
+        max-height: 100%;
+      }
     }
   </style>
 </head>
@@ -109,10 +183,22 @@
   <div class="wrap">
     <h1>웹캠 실시간 망설임 점수</h1>
     <div class="grid">
-      <div class="panel">
-        <div class="video-wrap">
-          <video id="video" autoplay playsinline muted></video>
-          <canvas id="overlay"></canvas>
+      <div class="panel preview-layout">
+        <div class="preview-grid">
+          <div class="preview-panel">
+            <div class="preview-label">Pose</div>
+            <div class="video-wrap">
+              <video id="poseVideo" class="preview-video" autoplay playsinline muted></video>
+              <canvas id="poseOverlay" class="preview-overlay"></canvas>
+            </div>
+          </div>
+          <div class="preview-panel">
+            <div class="preview-label">FaceMesh</div>
+            <div class="video-wrap">
+              <video id="faceVideo" class="preview-video" autoplay playsinline muted></video>
+              <canvas id="faceOverlay" class="preview-overlay"></canvas>
+            </div>
+          </div>
         </div>
         <canvas id="canvas" width="320" height="240"></canvas>
         <div class="controls">
@@ -135,17 +221,10 @@
             <input id="adaptiveMode" type="checkbox" checked>
             Adaptive
           </label>
-          <label>
-            오버레이
-            <select id="overlayMode" style="margin-left:4px;">
-              <option value="pose" selected>Pose</option>
-              <option value="facemesh">FaceMesh</option>
-            </select>
-          </label>
         </div>
       </div>
 
-      <div class="panel">
+      <div class="panel metrics-panel">
         <div id="status" class="status ok">NORMAL</div>
 
         <div class="kv"><span class="k">face_score</span><strong id="faceScore">0.000</strong></div>
@@ -165,18 +244,20 @@
   </div>
 
   <script>
-    const video = document.getElementById('video');
+    const poseVideo = document.getElementById('poseVideo');
+    const faceVideo = document.getElementById('faceVideo');
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
-    const overlay = document.getElementById('overlay');
-    const octx = overlay.getContext('2d');
+    const poseOverlay = document.getElementById('poseOverlay');
+    const poseCtx = poseOverlay.getContext('2d');
+    const faceOverlay = document.getElementById('faceOverlay');
+    const faceCtx = faceOverlay.getContext('2d');
 
     const startBtn = document.getElementById('startBtn');
     const stopBtn = document.getElementById('stopBtn');
     const intervalMsInput = document.getElementById('intervalMs');
     const captureSizeInput = document.getElementById('captureSize');
     const adaptiveModeInput = document.getElementById('adaptiveMode');
-    const overlayModeInput = document.getElementById('overlayMode');
 
     const statusEl = document.getElementById('status');
     const faceScoreEl = document.getElementById('faceScore');
@@ -242,62 +323,70 @@
       }
     }
 
-    function resizeOverlay() {
-      overlay.width = video.videoWidth || 640;
-      overlay.height = video.videoHeight || 480;
+    function resizeOverlay(videoEl, overlayEl) {
+      const sourceWidth = videoEl.videoWidth || 640;
+      const sourceHeight = videoEl.videoHeight || 480;
+      const renderedWidth = videoEl.clientWidth || sourceWidth;
+      const renderedHeight = videoEl.clientHeight || sourceHeight;
+
+      overlayEl.width = sourceWidth;
+      overlayEl.height = sourceHeight;
+      overlayEl.style.width = `${renderedWidth}px`;
+      overlayEl.style.height = `${renderedHeight}px`;
     }
 
     function drawPoseOverlay(data) {
-      resizeOverlay();
-      octx.clearRect(0, 0, overlay.width, overlay.height);
+      resizeOverlay(poseVideo, poseOverlay);
+      poseCtx.clearRect(0, 0, poseOverlay.width, poseOverlay.height);
       const points = data.pose_points || (data.pose_features && data.pose_features.pose_points) || [];
       const conns = data.pose_connections || (data.pose_features && data.pose_features.pose_connections) || [];
       if (!points.length) return;
 
-      octx.lineWidth = 2;
-      octx.strokeStyle = 'rgba(0, 220, 255, 0.85)';
-      octx.fillStyle = 'rgba(255, 230, 80, 0.9)';
+      poseCtx.lineWidth = 2;
+      poseCtx.strokeStyle = 'rgba(0, 220, 255, 0.85)';
+      poseCtx.fillStyle = 'rgba(255, 230, 80, 0.9)';
 
       for (const pair of conns) {
         const a = points[pair[0]];
         const b = points[pair[1]];
         if (!a || !b) continue;
         if ((a.v ?? 1) < 0.35 || (b.v ?? 1) < 0.35) continue;
-        octx.beginPath();
-        octx.moveTo(a.x * overlay.width, a.y * overlay.height);
-        octx.lineTo(b.x * overlay.width, b.y * overlay.height);
-        octx.stroke();
+        poseCtx.beginPath();
+        poseCtx.moveTo(a.x * poseOverlay.width, a.y * poseOverlay.height);
+        poseCtx.lineTo(b.x * poseOverlay.width, b.y * poseOverlay.height);
+        poseCtx.stroke();
       }
 
       for (const p of points) {
         if ((p.v ?? 1) < 0.35) continue;
-        octx.beginPath();
-        octx.arc(p.x * overlay.width, p.y * overlay.height, 2.6, 0, Math.PI * 2);
-        octx.fill();
+        poseCtx.beginPath();
+        poseCtx.arc(p.x * poseOverlay.width, p.y * poseOverlay.height, 2.6, 0, Math.PI * 2);
+        poseCtx.fill();
       }
     }
 
     function drawFaceMeshOverlay(data) {
-      resizeOverlay();
-      octx.clearRect(0, 0, overlay.width, overlay.height);
+      resizeOverlay(faceVideo, faceOverlay);
+      faceCtx.clearRect(0, 0, faceOverlay.width, faceOverlay.height);
       const points = data.face_points || [];
       if (!points.length) return;
 
-      octx.fillStyle = 'rgba(255, 120, 120, 0.88)';
+      faceCtx.fillStyle = 'rgba(255, 120, 120, 0.88)';
       for (const p of points) {
-        octx.beginPath();
-        octx.arc(p.x * overlay.width, p.y * overlay.height, 1.2, 0, Math.PI * 2);
-        octx.fill();
+        faceCtx.beginPath();
+        faceCtx.arc(p.x * faceOverlay.width, p.y * faceOverlay.height, 1.2, 0, Math.PI * 2);
+        faceCtx.fill();
       }
     }
 
-    function drawSelectedOverlay(data) {
-      const mode = String(overlayModeInput?.value || 'pose');
-      if (mode === 'facemesh') {
-        drawFaceMeshOverlay(data);
-      } else {
-        drawPoseOverlay(data);
-      }
+    function drawAllOverlays(data) {
+      drawPoseOverlay(data);
+      drawFaceMeshOverlay(data);
+    }
+
+    function clearOverlays() {
+      poseCtx.clearRect(0, 0, poseOverlay.width, poseOverlay.height);
+      faceCtx.clearRect(0, 0, faceOverlay.width, faceOverlay.height);
     }
 
     function scheduleNextTick() {
@@ -331,8 +420,11 @@
           video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' },
           audio: false
         });
-        video.srcObject = stream;
-        await video.play();
+        poseVideo.srcObject = stream;
+        faceVideo.srcObject = stream;
+        await Promise.all([poseVideo.play(), faceVideo.play()]);
+        resizeOverlay(poseVideo, poseOverlay);
+        resizeOverlay(faceVideo, faceOverlay);
 
         startBtn.disabled = true;
         stopBtn.disabled = false;
@@ -355,12 +447,13 @@
         stream.getTracks().forEach(t => t.stop());
         stream = null;
       }
-      video.srcObject = null;
+      poseVideo.srcObject = null;
+      faceVideo.srcObject = null;
       inFlight = false;
       startBtn.disabled = false;
       stopBtn.disabled = true;
       msgEl.textContent = '중지됨';
-      octx.clearRect(0, 0, overlay.width, overlay.height);
+      clearOverlays();
     }
 
     async function loopTick() {
@@ -370,14 +463,14 @@
     }
 
     async function captureAndSend() {
-      if (inFlight || !video.videoWidth || !video.videoHeight) return;
+      if (inFlight || !poseVideo.videoWidth || !poseVideo.videoHeight) return;
       inFlight = true;
 
       try {
         const { w, h } = getCaptureSize();
         canvas.width = w;
         canvas.height = h;
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        ctx.drawImage(poseVideo, 0, 0, canvas.width, canvas.height);
 
         const image = await canvasToBase64Jpeg(canvas, 0.62);
         if (!image) {
@@ -415,7 +508,7 @@
 
         const data = await res.json();
         const pf = data.pose_features || {};
-        drawSelectedOverlay(data);
+        drawAllOverlays(data);
 
         faceScoreEl.textContent = toFixed3(data.face_score);
         poseScoreEl.textContent = toFixed3(data.pose_score ?? data.body_score);
@@ -440,8 +533,9 @@
 
     startBtn.addEventListener('click', startCamera);
     stopBtn.addEventListener('click', stopCamera);
-    overlayModeInput?.addEventListener('change', () => {
-      octx.clearRect(0, 0, overlay.width, overlay.height);
+    window.addEventListener('resize', () => {
+      resizeOverlay(poseVideo, poseOverlay);
+      resizeOverlay(faceVideo, faceOverlay);
     });
   </script>
 </body>

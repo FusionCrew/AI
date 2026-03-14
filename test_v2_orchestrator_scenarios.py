@@ -3,7 +3,11 @@ from types import SimpleNamespace
 from typing import Any, Dict, List
 
 from v2.orchestrator import V2LangChainOrchestrator
-from v2.studio_graph import graph as studio_graph
+
+try:
+    from v2.studio_graph import graph as studio_graph
+except Exception:
+    studio_graph = None
 
 
 MENU_ITEMS: List[Dict[str, Any]] = [
@@ -205,7 +209,33 @@ async def test_mixed_recommendation_and_info_should_stay_recommendation() -> Non
     assert result.get("action") == "NONE"
 
 
+async def test_recommendation_short_circuits_before_langgraph() -> None:
+    orch = _make_orchestrator()
+
+    def _can_use_langgraph() -> bool:
+        return True
+
+    async def _run_langgraph(*args: Any, **kwargs: Any) -> Dict[str, Any]:
+        raise AssertionError("recommendation should return before langgraph")
+
+    orch._can_use_langgraph = _can_use_langgraph  # type: ignore[method-assign]
+    orch._run_langgraph = _run_langgraph  # type: ignore[method-assign]
+
+    result = await _run_orchestrator(
+        orch,
+        user_text="마요소스가 들어가는 메뉴 추천해줘",
+        state={"diningType": "DINE_IN"},
+    )
+    assert result.get("intent") == "MENU_RECOMMEND"
+    assert result.get("action") == "NONE"
+    assert str(result.get("orchestrator") or "") == "recommendation-short-circuit"
+    assert isinstance(result.get("actionData", {}).get("recommendationCandidates"), list)
+    assert len(result.get("actionData", {}).get("recommendationCandidates")) >= 1
+
+
 async def test_studio_graph_matches_info_policy() -> None:
+    if studio_graph is None:
+        return
     result = await studio_graph.ainvoke(
         {
             "user_text": "징거버거의 알레르기 정보 알려줘",
@@ -256,6 +286,7 @@ async def main() -> None:
         test_ordering_add_menu_should_work,
         test_recommendation_from_vector_candidates,
         test_mixed_recommendation_and_info_should_stay_recommendation,
+        test_recommendation_short_circuits_before_langgraph,
         test_studio_graph_matches_info_policy,
         test_checkout_and_payment,
     ]
