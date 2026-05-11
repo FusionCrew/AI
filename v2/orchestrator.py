@@ -1257,6 +1257,15 @@ class V2LangChainOrchestrator:
             exclude_terms=allergen_terms,
         )
         ingredient_term_norm = self._norm_text(ingredient_term)
+        if allergen_terms and not ingredient_term_norm and ingredient_vocab:
+            allergen_norms = {self._norm_text(a) for a in allergen_terms if self._norm_text(a)}
+            ingredient_norm_map = {
+                self._norm_text(ing): ing for ing in ingredient_vocab if self._norm_text(ing)
+            }
+            overlap = next((ingredient_norm_map[n] for n in allergen_norms if n in ingredient_norm_map), "")
+            if overlap:
+                ingredient_term = overlap
+                ingredient_term_norm = self._norm_text(overlap)
         want_exclude = self._wants_exclusion(text)
         logger.info(
             "v2.recommend.parse text=%r exclude=%s allergens=%s ingredient=%s",
@@ -1973,8 +1982,19 @@ class V2LangChainOrchestrator:
                     return t[: -len(suf)]
             return t
         stop = {
+            "오늘",
+            "오늘의",
             "추천",
+            "추천메뉴",
+            "추천메뉴는",
+            "추천메뉴좀",
+            "추천좀",
+            "추천해줘",
+            "추천해줘요",
+            "추천해",
             "메뉴",
+            "세트메뉴",
+            "단품메뉴",
             "음식",
             "재료",
             "원재료",
@@ -1995,6 +2015,12 @@ class V2LangChainOrchestrator:
             "않은",
             "않는",
             "않아",
+            "위주로",
+            "뭐야",
+            "뭐예요",
+            "뭐에요",
+            "뭐가좋아",
+            "뭐가좋아요",
             "해줘",
             "좀",
             "으로",

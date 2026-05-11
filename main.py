@@ -1,4 +1,4 @@
-﻿from fastapi import FastAPI, HTTPException, UploadFile, File, Request, Form
+﻿from fastapi import FastAPI, HTTPException, UploadFile, File, Request, Form, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel
@@ -9,6 +9,8 @@ import os
 import re
 import time
 import asyncio
+import contextlib
+import ssl
 import urllib.request
 import urllib.parse
 import base64
@@ -21,9 +23,15 @@ import numpy as np
 import cv2
 from collections import defaultdict, deque
 import logging
+import requests
+import certifi
 from v2.orchestrator import V2LangChainOrchestrator
 from v2.tracing_utils import traceable_safe
 from v2.vector_index import QdrantMenuVectorStore
+try:
+    from websockets.asyncio.client import connect as realtime_ws_connect
+except Exception:  # pragma: no cover - fallback for older websockets packages
+    from websockets.client import connect as realtime_ws_connect
 
 # Load env in priority order:
 # 1) AI/.env (LangGraph/LangSmith local runtime settings)
@@ -37,6 +45,10 @@ if backend_env_path.exists():
 
 api_key = os.getenv("OPENAI_API") or os.getenv("OPENAI_API_KEY")
 client = OpenAI(api_key=api_key) if api_key else None
+REALTIME_MODEL = os.getenv("OPENAI_REALTIME_MODEL", "gpt-realtime-2")
+REALTIME_VOICE = os.getenv("OPENAI_REALTIME_VOICE", "marin")
+REALTIME_TRANSCRIBE_MODEL = os.getenv("OPENAI_REALTIME_TRANSCRIBE_MODEL", "gpt-4o-transcribe")
+REALTIME_API_URL = os.getenv("OPENAI_REALTIME_API_URL", "https://api.openai.com/v1/realtime/calls")
 
 app = FastAPI(
     title="AI Kiosk - AI Server",
@@ -98,6 +110,94 @@ def _update_v2_quality_metrics(user_text: str, result: Dict[str, Any], elapsed_m
 
     if elapsed_ms >= 0:
         _V2_METRICS["latency_ms"].append(int(elapsed_ms))
+
+
+def _build_realtime_session_config() -> Dict[str, Any]:
+    return {
+        "type": "realtime",
+        "model": REALTIME_MODEL,
+        "audio": {
+            "output": {
+                "voice": REALTIME_VOICE,
+            }
+        },
+    }
+
+
+def _build_realtime_server_proxy_session_update() -> Dict[str, Any]:
+    return {
+        "type": "session.update",
+        "session": {
+            "type": "realtime",
+            "instructions": "\n".join(
+                [
+                    "You are the speech interface for a Korean hamburger kiosk.",
+                    "Do not decide ordering logic yourself.",
+                    "Your job is to transcribe the customer's Korean speech reliably.",
+                    "Do not generate assistant replies automatically unless the server explicitly asks for one.",
+                ]
+            ),
+            "audio": {
+                "input": {
+                    "format": {
+                        "type": "audio/pcm",
+                        "rate": 24000,
+                    },
+                    "transcription": {
+                        "model": REALTIME_TRANSCRIBE_MODEL,
+                        "language": "ko",
+                        "prompt": "한국 햄버거 키오스크 주문 대화입니다. 매장식사, 포장, 세트, 단품, 버거, 사이드, 음료, 장바구니, 결제 같은 단어를 정확히 인식하세요.",
+                    },
+                    "turn_detection": {
+                        "type": "semantic_vad",
+                        "eagerness": "medium",
+                        "create_response": False,
+                        "interrupt_response": True,
+                    },
+                }
+            },
+        },
+    }
+
+
+def _create_realtime_call_sync(offer_sdp: str, safety_identifier: Optional[str] = None) -> requests.Response:
+    if not api_key:
+        raise RuntimeError("OpenAI API Key not found")
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+    }
+    if safety_identifier:
+        headers["OpenAI-Safety-Identifier"] = safety_identifier
+
+    session_config = json.dumps(_build_realtime_session_config(), ensure_ascii=False)
+    last_response: Optional[requests.Response] = None
+    retryable_statuses = {408, 429, 502, 503, 504}
+
+    for attempt in range(3):
+        response = requests.post(
+            REALTIME_API_URL,
+            headers=headers,
+            files={
+                "sdp": (None, offer_sdp),
+                "session": (None, session_config),
+            },
+            timeout=25,
+        )
+        last_response = response
+        if response.status_code not in retryable_statuses:
+            return response
+        if attempt < 2:
+            time.sleep(0.6 * (attempt + 1))
+
+    if last_response is None:
+        raise RuntimeError("Realtime session request failed before receiving a response")
+    return last_response
+
+
+def _build_realtime_proxy_ws_url() -> str:
+    query_model = urllib.parse.quote(REALTIME_MODEL, safe="")
+    return f"wss://api.openai.com/v1/realtime?model={query_model}"
 
 # --- Common Models ---
 
@@ -342,6 +442,8 @@ def _detect_allergen_terms(text: str) -> List[str]:
 
 def _is_menu_list_question(text: str) -> bool:
     t = text.replace(" ", "")
+    if any(k in t for k in ["추천", "알레르기", "알래르기", "알러지", "재료", "원재료", "성분", "포함", "제외", "없는"]):
+        return False
     return any(k in t for k in ["뭐뭐있", "메뉴뭐", "메뉴있", "메뉴목록", "전체메뉴", "뭐가있", "뭐있어"])
 
 def _is_similarity_question(text: str) -> bool:
@@ -351,6 +453,47 @@ def _is_similarity_question(text: str) -> bool:
 def _is_ingredient_question(text: str) -> bool:
     t = text.replace(" ", "")
     return any(k in t for k in ["재료", "들어가", "들어간", "빼고", "없는", "제외", "포함", "알레르기"])
+
+
+def _is_set_like_menu_item(item: Dict[str, Any]) -> bool:
+    category_id = str(item.get("categoryId") or item.get("category") or "").lower()
+    name = str(item.get("name") or "").lower()
+    return "set" in category_id or "세트" in category_id or "세트" in name or "코스" in name
+
+
+def _build_recommendation_candidates(
+    menu_items: List[Dict[str, Any]],
+    *,
+    limit: int = 3,
+    prefer_set: bool = True,
+) -> List[Dict[str, Any]]:
+    seen: set[str] = set()
+    unique: List[Dict[str, Any]] = []
+    for it in menu_items:
+        if not isinstance(it, dict):
+            continue
+        menu_id = str(it.get("menuItemId") or "").strip()
+        name = str(it.get("name") or "").strip()
+        if not menu_id or not name:
+            continue
+        key = f"{menu_id}:{name}"
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(it)
+    if prefer_set:
+        unique.sort(key=lambda it: (0 if _is_set_like_menu_item(it) else 1, str(it.get("name") or "")))
+    else:
+        unique.sort(key=lambda it: str(it.get("name") or ""))
+    top = unique[: max(1, limit)]
+    return [
+        {
+            "menuItemId": str(it.get("menuItemId") or ""),
+            "name": str(it.get("name") or ""),
+        }
+        for it in top
+        if str(it.get("menuItemId") or "").strip() and str(it.get("name") or "").strip()
+    ]
 
 def _resolve_menu_mention(text: str, menu_items: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     """
@@ -569,6 +712,72 @@ async def _run_v2_orchestrator_traced(
         request_id=request_id,
     )
 
+
+def _build_realtime_llm_request(
+    transcript: str,
+    session_id: str,
+    payload: Optional[Dict[str, Any]],
+) -> "LlmChatRequest":
+    safe_payload = payload if isinstance(payload, dict) else {}
+    context_payload = safe_payload.get("context") if isinstance(safe_payload.get("context"), dict) else {}
+    state_payload = context_payload.get("state") if isinstance(context_payload.get("state"), dict) else {}
+    kiosk_state = context_payload.get("kioskState") if isinstance(context_payload.get("kioskState"), str) else None
+    order_type = safe_payload.get("orderType") if isinstance(safe_payload.get("orderType"), str) else None
+
+    return LlmChatRequest(
+        messages=[ChatMessage(role="user", content=str(transcript or "").strip())],
+        sessionId=session_id,
+        orderType=order_type,
+        context=ChatContext(
+            sessionId=session_id,
+            kioskState=kiosk_state,
+            state=state_payload,
+        ),
+    )
+
+
+async def _run_realtime_server_brain(
+    transcript: str,
+    session_id: str,
+    payload: Optional[Dict[str, Any]],
+) -> Dict[str, Any]:
+    request_id = f"req_rt_brain_{int(datetime.now().timestamp() * 1000)}"
+    llm_request = _build_realtime_llm_request(transcript, session_id, payload)
+    trace_context = {
+        "requestId": request_id,
+        "sessionId": session_id,
+        "clientSource": "realtime-server-proxy",
+        "queryPreview": str(transcript or "")[:80],
+        "route": "/api/v2/realtime/ws",
+    }
+    pack = await _run_v2_orchestrator_traced(
+        request=llm_request,
+        request_id=request_id,
+        session_id=session_id,
+        trace_context=trace_context,
+        langsmith_extra={
+            "name": "aikiosk.v2.realtime_server_brain",
+            "tags": ["aikiosk", "v2", "voice", "realtime", "server-proxy"],
+            "metadata": trace_context,
+        },
+    )
+    result = pack.get("result", {}) if isinstance(pack, dict) else {}
+    trace = pack.get("trace", []) if isinstance(pack, dict) else []
+    speech = (
+        str(result.get("text") or "").strip()
+        or str(result.get("reply") or "").strip()
+        or str(result.get("speech") or "").strip()
+    )
+    return {
+        "speech": speech or "원하시는 메뉴를 다시 말씀해 주세요.",
+        "action": str(result.get("action") or "NONE"),
+        "actionData": result.get("actionData") if isinstance(result.get("actionData"), dict) else {},
+        "motion": result.get("motion"),
+        "segments": result.get("segments") if isinstance(result.get("segments"), list) else [],
+        "trace": trace if isinstance(trace, list) else [],
+        "raw": result if isinstance(result, dict) else {},
+    }
+
 class NluRequest(BaseModel):
     utterance: str
 
@@ -687,6 +896,293 @@ async def ping():
 @app.get("/api/v2/meta/health")
 async def meta_health():
     return {"status": "UP"}
+
+
+@app.get("/api/v2/realtime/config")
+async def realtime_config():
+    return {
+        "success": True,
+        "data": {
+            "model": REALTIME_MODEL,
+            "voice": REALTIME_VOICE,
+            "transport": "webrtc-unified",
+            "sessionType": "realtime",
+            "serverEndpoint": "/api/v2/realtime/session",
+        },
+        "timestamp": get_timestamp(),
+        "requestId": f"req_realtime_cfg_{int(datetime.now().timestamp())}",
+    }
+
+
+@app.websocket("/api/v2/realtime/ws")
+async def realtime_ws_proxy(browser_ws: WebSocket):
+    await browser_ws.accept()
+
+    if not api_key:
+        await browser_ws.send_json({"type": "error", "error": {"message": "OpenAI API Key not found"}})
+        await browser_ws.close(code=1011)
+        return
+
+    session_id = (
+        browser_ws.query_params.get("sessionId")
+        or browser_ws.query_params.get("session_id")
+        or f"realtime_{int(time.time() * 1000)}"
+    )
+    safety_identifier = session_id
+    latest_payload: Dict[str, Any] = {
+        "sessionId": session_id,
+        "orderType": None,
+        "context": {
+            "sessionId": session_id,
+            "kioskState": None,
+            "state": {},
+        },
+    }
+    brain_lock = asyncio.Lock()
+    pending_audio_ms = 0.0
+    audio_chunk_count = 0
+
+    async def send_browser_event(event: Dict[str, Any]) -> None:
+        await browser_ws.send_json(event)
+
+    async def handle_upstream_event(raw_message: str) -> None:
+        nonlocal pending_audio_ms
+        event = json.loads(raw_message)
+        event_type = str(event.get("type") or "")
+        if not event_type:
+            return
+
+        if event_type in {
+            "session.created",
+            "session.updated",
+            "input_audio_buffer.speech_started",
+            "response.created",
+            "response.done",
+            "response.output_audio.done",
+            "response.output_audio_transcript.done",
+        }:
+            await send_browser_event(event)
+            return
+
+        if event_type == "input_audio_buffer.speech_stopped":
+            logger.info("[realtime-ws] speech_stopped session=%s bufferedMs=%.2f", session_id, pending_audio_ms)
+            await send_browser_event(event)
+            if pending_audio_ms >= 100.0:
+                await upstream_ws.send(json.dumps({"type": "input_audio_buffer.commit"}))
+                pending_audio_ms = 0.0
+            return
+
+        if event_type in {
+            "response.output_audio.delta",
+            "response.output_audio_transcript.delta",
+            "response.text.delta",
+        }:
+            await send_browser_event(event)
+            return
+
+        if event_type == "conversation.item.input_audio_transcription.completed":
+            transcript = str(event.get("transcript") or "").strip()
+            logger.info("[realtime-ws] transcription completed session=%s text=%s", session_id, transcript[:120])
+            pending_audio_ms = 0.0
+            await send_browser_event({"type": event_type, "transcript": transcript})
+            if not transcript:
+                return
+            async with brain_lock:
+                try:
+                    result = await _run_realtime_server_brain(transcript, session_id, latest_payload)
+                except Exception as exc:
+                    logger.exception("[realtime-ws] central brain failed")
+                    await send_browser_event(
+                        {
+                            "type": "kiosk.response",
+                            "transcript": transcript,
+                            "speech": "죄송해요. 주문 내용을 다시 한 번 말씀해 주세요.",
+                            "action": "NONE",
+                            "actionData": {},
+                            "motion": "m20",
+                            "segments": [],
+                            "error": str(exc),
+                        }
+                    )
+                    return
+
+                await send_browser_event(
+                    {
+                        "type": "kiosk.response",
+                        "transcript": transcript,
+                        "speech": result.get("speech") or "원하시는 메뉴를 다시 말씀해 주세요.",
+                        "action": result.get("action") or "NONE",
+                        "actionData": result.get("actionData") or {},
+                        "motion": result.get("motion"),
+                        "segments": result.get("segments") or [],
+                        "trace": result.get("trace") or [],
+                    }
+                )
+                await speak_with_upstream(str(result.get("speech") or "원하시는 메뉴를 다시 말씀해 주세요."))
+            return
+
+        if event_type == "error":
+            await send_browser_event(event)
+            return
+
+    upstream_headers = {
+        "Authorization": f"Bearer {api_key}",
+    }
+    if safety_identifier:
+        upstream_headers["OpenAI-Safety-Identifier"] = safety_identifier
+
+    ssl_context = ssl.create_default_context(cafile=certifi.where())
+
+    try:
+        async with realtime_ws_connect(
+            _build_realtime_proxy_ws_url(),
+            additional_headers=upstream_headers,
+            ssl=ssl_context,
+            open_timeout=20,
+            close_timeout=5,
+            max_size=16 * 1024 * 1024,
+        ) as upstream_ws:
+            await upstream_ws.send(json.dumps(_build_realtime_server_proxy_session_update(), ensure_ascii=False))
+
+            async def speak_with_upstream(speech: str) -> None:
+                exact_speech = str(speech or "").strip()
+                if not exact_speech:
+                    return
+                await upstream_ws.send(
+                    json.dumps(
+                        {
+                            "type": "response.create",
+                            "response": {
+                                "instructions": (
+                                    "Speak exactly the following Korean sentence and nothing else. "
+                                    "Do not add or remove words. "
+                                    f"Sentence: {json.dumps(exact_speech, ensure_ascii=False)}"
+                                ),
+                                "audio": {
+                                    "output": {
+                                        "format": {
+                                            "type": "audio/pcm",
+                                            "rate": 24000,
+                                        }
+                                    }
+                                },
+                            },
+                        },
+                        ensure_ascii=False,
+                    )
+                )
+
+            async def relay_upstream() -> None:
+                async for raw_message in upstream_ws:
+                    await handle_upstream_event(str(raw_message))
+
+            relay_task = asyncio.create_task(relay_upstream())
+
+            try:
+                while True:
+                    message = await browser_ws.receive_json()
+                    msg_type = str(message.get("type") or "")
+                    if msg_type == "state.update":
+                        payload = message.get("payload")
+                        if isinstance(payload, dict):
+                            latest_payload = payload
+                        continue
+                    if msg_type == "audio.append":
+                        audio_b64 = str(message.get("audio") or "").strip()
+                        if audio_b64:
+                            audio_chunk_count += 1
+                            try:
+                                audio_bytes = len(base64.b64decode(audio_b64))
+                                pending_audio_ms += (audio_bytes / 2 / 24000) * 1000.0
+                                if audio_chunk_count == 1 or audio_chunk_count % 25 == 0:
+                                    logger.info(
+                                        "[realtime-ws] audio.append session=%s chunks=%s bufferedMs=%.2f bytes=%s",
+                                        session_id,
+                                        audio_chunk_count,
+                                        pending_audio_ms,
+                                        audio_bytes,
+                                    )
+                            except Exception:
+                                pass
+                            await upstream_ws.send(
+                                json.dumps(
+                                    {
+                                        "type": "input_audio_buffer.append",
+                                        "audio": audio_b64,
+                                    }
+                                )
+                            )
+                        continue
+                    if msg_type == "speak":
+                        speech = str(message.get("speech") or "").strip()
+                        if speech:
+                            await speak_with_upstream(speech)
+                        continue
+                    if msg_type == "input_audio_buffer.commit":
+                        if pending_audio_ms >= 100.0:
+                            await upstream_ws.send(json.dumps({"type": "input_audio_buffer.commit"}))
+                            pending_audio_ms = 0.0
+                        continue
+                    if msg_type == "response.cancel":
+                        await upstream_ws.send(json.dumps({"type": "response.cancel"}))
+                        continue
+                    if msg_type == "ping":
+                        await send_browser_event({"type": "pong"})
+                        continue
+            except WebSocketDisconnect:
+                pass
+            finally:
+                relay_task.cancel()
+                with contextlib.suppress(Exception):
+                    await relay_task
+    except Exception as exc:
+        logger.exception("[realtime-ws] proxy failed")
+        with contextlib.suppress(Exception):
+            await browser_ws.send_json({"type": "error", "error": {"message": str(exc)}})
+        with contextlib.suppress(Exception):
+            await browser_ws.close(code=1011)
+
+
+@app.post("/api/v2/realtime/session")
+async def realtime_session(request: Request):
+    if not api_key:
+        return CommonResponse(success=False, error={"code": "NO_API_KEY", "message": "OpenAI API Key not found"})
+
+    raw_body = await request.body()
+    if not raw_body:
+        return CommonResponse(success=False, error={"code": "INVALID_REQUEST", "message": "SDP offer body is required"})
+
+    try:
+        offer_sdp = raw_body.decode("utf-8")
+    except UnicodeDecodeError:
+        return CommonResponse(success=False, error={"code": "INVALID_REQUEST", "message": "SDP offer must be UTF-8 text"})
+
+    if not offer_sdp.strip():
+        return CommonResponse(success=False, error={"code": "INVALID_REQUEST", "message": "SDP offer body is empty"})
+
+    safety_identifier = request.headers.get("x-session-id") or request.headers.get("x-user-id") or None
+
+    try:
+        upstream = await asyncio.to_thread(_create_realtime_call_sync, offer_sdp, safety_identifier)
+    except Exception as e:
+        logger.exception("[realtime] session setup failed before upstream response")
+        return CommonResponse(success=False, error={"code": "REALTIME_SETUP_ERROR", "message": str(e)})
+
+    content_type = upstream.headers.get("content-type", "")
+    if not upstream.ok:
+        message = upstream.text
+        if "text/html" in content_type.lower():
+            message = f"OpenAI Realtime upstream error ({upstream.status_code}). Please try again."
+        return CommonResponse(
+            success=False,
+            error={
+                "code": "REALTIME_SETUP_ERROR",
+                "message": message,
+            },
+            meta={"statusCode": upstream.status_code},
+        )
+
+    return Response(content=upstream.text, media_type="application/sdp")
 
 @app.get("/api/v1/meta/models")
 @app.get("/api/v2/meta/models")
@@ -839,6 +1335,131 @@ async def llm_chat(request: LlmChatRequest):
         # DB-grounded deterministic Q&A (avoid hallucinations)
         # -------------------------
         user_text = latest_user.strip()
+        mention_for_recommend = _resolve_menu_mention(user_text, menu_items)
+
+        # 0) Recommendation question
+        if ("추천" in user_text.replace(" ", "")) and not mention_for_recommend:
+            allergen_terms = _detect_allergen_terms(user_text)
+            if allergen_terms:
+                try:
+                    await _ensure_all_details_cached(menu_items)
+                except Exception:
+                    pass
+                want_exclude = any(
+                    k in user_text
+                    for k in ["없는", "빼고", "제외", "안들어가", "안들어간", "안들어가는", "미포함", "비포함", "제외한"]
+                )
+                matched_items: List[Dict[str, Any]] = []
+                term = allergen_terms[0]
+                for it in menu_items:
+                    mid = it.get("menuItemId")
+                    if not mid:
+                        continue
+                    det = (_MENU_DETAIL_CACHE.get(mid) or {}).get("data") or {}
+                    alls = det.get("allergies") or []
+                    has = term in alls
+                    if (not want_exclude and has) or (want_exclude and not has):
+                        matched_items.append(it)
+                top = _build_recommendation_candidates(matched_items, limit=3, prefer_set=True)
+                if not top:
+                    reply = f"{term} {'없는' if want_exclude else '포함된'} 조건에 맞는 추천 메뉴를 찾지 못했어요. 다른 조건으로 말씀해 주세요."
+                else:
+                    names = [str(it["name"]) for it in top]
+                    reply = f"{term} {'없는' if want_exclude else '포함된'} 추천 메뉴는 {', '.join(names)}예요. 원하시는 메뉴 이름을 말씀해 주세요."
+                CHAT_MEMORY[session_id].extend([
+                    {"role": "user", "content": user_text},
+                    {"role": "assistant", "content": reply},
+                ])
+                CHAT_MEMORY[session_id] = CHAT_MEMORY[session_id][-20:]
+                return CommonResponse(
+                    success=True,
+                    data={
+                        "reply": reply,
+                        "text": reply,
+                        "intent": "MENU_RECOMMEND",
+                        "action": "NONE",
+                        "actionData": {"stage": "RECOMMENDATION", "recommendationCandidates": top},
+                    },
+                    meta={"sessionId": session_id},
+                    requestId=f"req_chat_{int(datetime.now().timestamp())}",
+                )
+
+            if _is_ingredient_question(user_text):
+                tokens = re.findall(r"[0-9A-Za-z가-힣]+", user_text)
+                stop = {
+                    "메뉴", "재료", "알레르기", "있어", "뭐", "뭐뭐", "들어가", "들어간", "없는", "빼고", "제외", "포함", "추천", "비슷한",
+                }
+                cand = ""
+                for tok in tokens:
+                    if tok in stop:
+                        continue
+                    if len(tok) > len(cand):
+                        cand = tok
+                if cand:
+                    if not any(isinstance((it.get("ingredients") if isinstance(it, dict) else None), list) for it in menu_items):
+                        try:
+                            menu_items = await _get_kiosk_menu_items_cached()
+                        except Exception:
+                            pass
+                    want_exclude = any(
+                        k in user_text
+                        for k in ["없는", "빼고", "제외", "안들어가", "안들어간", "안들어가는", "미포함", "비포함", "제외한"]
+                    )
+                    matched_items: List[Dict[str, Any]] = []
+                    for it in menu_items:
+                        ings = it.get("ingredients") or []
+                        if not isinstance(ings, list):
+                            continue
+                        has = any(cand in (x or "") for x in ings)
+                        if (not want_exclude and has) or (want_exclude and not has):
+                            matched_items.append(it)
+                    top = _build_recommendation_candidates(matched_items, limit=3, prefer_set=True)
+                    if not top:
+                        reply = f"{cand} {'없는' if want_exclude else '들어간'} 추천 메뉴를 찾지 못했어요. 다른 조건으로 말씀해 주세요."
+                    else:
+                        names = [str(it["name"]) for it in top]
+                        reply = f"{cand} {'없는' if want_exclude else '들어간'} 추천 메뉴는 {', '.join(names)}예요. 원하시는 메뉴 이름을 말씀해 주세요."
+                    CHAT_MEMORY[session_id].extend([
+                        {"role": "user", "content": user_text},
+                        {"role": "assistant", "content": reply},
+                    ])
+                    CHAT_MEMORY[session_id] = CHAT_MEMORY[session_id][-20:]
+                    return CommonResponse(
+                        success=True,
+                        data={
+                            "reply": reply,
+                            "text": reply,
+                            "intent": "MENU_RECOMMEND",
+                            "action": "NONE",
+                            "actionData": {"stage": "RECOMMENDATION", "recommendationCandidates": top},
+                        },
+                        meta={"sessionId": session_id},
+                        requestId=f"req_chat_{int(datetime.now().timestamp())}",
+                    )
+
+            top = _build_recommendation_candidates(menu_items, limit=3, prefer_set=True)
+            reply = (
+                f"오늘 추천 메뉴는 {', '.join(str(it['name']) for it in top)}예요. 원하시는 메뉴 이름을 말씀해 주세요."
+                if top
+                else "지금 추천할 수 있는 메뉴를 찾지 못했어요. 원하시는 메뉴를 말씀해 주세요."
+            )
+            CHAT_MEMORY[session_id].extend([
+                {"role": "user", "content": user_text},
+                {"role": "assistant", "content": reply},
+            ])
+            CHAT_MEMORY[session_id] = CHAT_MEMORY[session_id][-20:]
+            return CommonResponse(
+                success=True,
+                data={
+                    "reply": reply,
+                    "text": reply,
+                    "intent": "MENU_RECOMMEND",
+                    "action": "NONE",
+                    "actionData": {"stage": "RECOMMENDATION", "recommendationCandidates": top},
+                },
+                meta={"sessionId": session_id},
+                requestId=f"req_chat_{int(datetime.now().timestamp())}",
+            )
 
         # 1) Menu list / catalog question
         if _is_menu_list_question(user_text):

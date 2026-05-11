@@ -13,8 +13,16 @@ _ALIASES = {
     "홀슬로": "코울슬로",
     "콜슬로": "코울슬로",
     "콜슬로우": "코울슬로",
+    "더블세트": "더블치즈버거세트",
+    "클래식더블세트": "더블치즈버거세트",
+    "클래식 더블세트": "더블치즈버거세트",
     "상바구니": "장바구니",
     "청바구니": "장바구니",
+    "친고버거": "징거버거",
+    "갭세버거": "캡새버거",
+    "내장시트": "매장식사",
+    "내장지카": "매장식사",
+    "매장시켜라": "매장식사",
 }
 
 _CATEGORY_HINTS: Dict[str, List[str]] = {
@@ -152,7 +160,16 @@ def parse_state_intent(
     if not text:
         return ParsedIntent(intent="NONE", confidence=1.0, reason="empty", normalized_text=text)
 
-    if "장바구니" in compact or ("담겨" in compact and ("뭐" in compact or "무엇" in compact)):
+    if any(tok in compact for tok in ["안녕", "안녕하세요", "반가워"]):
+        intent = "CONTINUE_ORDER" if "CONTINUE_ORDER" in allowed else "NONE"
+        return ParsedIntent(intent=intent, confidence=0.92, reason="greeting", normalized_text=text)
+
+    if (
+        "장바구니" in compact
+        or "주문내역" in compact
+        or compact in {"장바구니", "주문내역"}
+        or ("담겨" in compact and ("뭐" in compact or "무엇" in compact))
+    ):
         intent = "CHECK_CART" if "CHECK_CART" in allowed else "NONE"
         return ParsedIntent(intent=intent, confidence=0.97, reason="cart_query", normalized_text=text)
 
@@ -201,7 +218,15 @@ def parse_state_intent(
                 reason="menu_add",
                 normalized_text=text,
             )
-        # Mention-only defaults to browse/help, not immediate add.
+        if stage == "MAIN_MENU" and "ADD_MENU" in allowed:
+            return ParsedIntent(
+                intent="ADD_MENU",
+                confidence=0.82,
+                menu_item_id=str(menu_mention.get("menuItemId") or ""),
+                quantity=qty,
+                reason="menu_add_by_mention",
+                normalized_text=text,
+            )
         intent = "CONTINUE_ORDER" if "CONTINUE_ORDER" in allowed else "NONE"
         return ParsedIntent(intent=intent, confidence=0.7, reason="menu_mention_no_add_verb", normalized_text=text)
 
